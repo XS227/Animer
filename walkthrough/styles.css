@@ -1,129 +1,254 @@
 :root {
-  --bg: #f5f7ff;
-  --surface: #ffffff;
-  --primary: #445bff;
-  --primary-soft: #e8ecff;
-  --text: #1f2742;
-  --muted: #5f6b95;
-  --ok: #1ca56d;
-  --warn: #f59e0b;
-  --radius: 14px;
-  --shadow: 0 8px 30px rgba(28, 45, 128, 0.12);
+  color-scheme: light;
+  --bg: #eef1ff;
+  --bg-deep: #dfe5ff;
+  --surface: rgba(255, 255, 255, 0.62);
+  --surface-strong: rgba(255, 255, 255, 0.82);
+  --surface-stroke: rgba(255, 255, 255, 0.72);
+  --primary: #4f63ff;
+  --primary-soft: rgba(79, 99, 255, 0.12);
+  --text: #1f2645;
+  --muted: #596189;
+  --ok: #16875a;
+  --warn: #9f5a00;
+  --pending: #4458d9;
+  --radius-lg: 20px;
+  --radius-md: 14px;
+  --shadow-soft: 0 12px 40px rgba(25, 42, 124, 0.12);
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
+  min-height: 100vh;
   font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
   color: var(--text);
-  background: var(--bg);
+  background:
+    radial-gradient(circle at 18% 16%, #ffffff 0%, transparent 34%),
+    radial-gradient(circle at 82% 10%, #d7deff 0%, transparent 42%),
+    linear-gradient(145deg, var(--bg) 0%, var(--bg-deep) 100%);
 }
 
 header {
-  background: linear-gradient(115deg, #3247d5 0%, #5f74ff 100%);
-  color: white;
-  padding: 28px 20px 80px;
+  color: var(--text);
+  padding: clamp(22px, 4vw, 42px) 20px 70px;
+}
+
+.header-wrap,
+main {
+  max-width: 1100px;
+  margin: 0 auto;
 }
 
 .header-wrap {
-  max-width: 1050px;
-  margin: 0 auto;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  background: var(--surface);
+  border: 1px solid var(--surface-stroke);
+  border-radius: calc(var(--radius-lg) + 2px);
+  box-shadow: var(--shadow-soft);
+  padding: clamp(18px, 3vw, 30px);
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(1.5rem, 4.2vw, 2.2rem);
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  margin: 0 0 12px;
+  font-size: clamp(1.1rem, 2vw, 1.25rem);
+}
+
+p {
+  margin: 0 0 10px;
+  color: var(--muted);
+  line-height: 1.6;
 }
 
 nav {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
-  margin-top: 16px;
+  margin-top: 18px;
+}
+
+nav a,
+a {
+  text-decoration: none;
+  color: var(--primary);
+  transition: all 0.18s ease;
 }
 
 nav a {
-  text-decoration: none;
-  color: white;
-  background: rgba(255, 255, 255, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid rgba(255, 255, 255, 0.95);
   border-radius: 999px;
+  padding: 8px 12px;
   font-size: 14px;
+  font-weight: 600;
+}
+
+nav a:hover,
+nav a:focus-visible {
+  transform: translateY(-1px);
+  background: #ffffff;
 }
 
 main {
-  max-width: 1050px;
-  margin: -45px auto 50px;
+  margin: -36px auto 48px;
   padding: 0 20px;
 }
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.stack {
+  display: grid;
+  gap: 16px;
 }
 
 .card {
   background: var(--surface);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 20px;
+  border: 1px solid var(--surface-stroke);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: clamp(16px, 2.5vw, 24px);
 }
 
-h1 { margin: 0; font-size: 2rem; }
-h2 { margin: 6px 0 14px; font-size: 1.2rem; }
-p { margin: 0 0 10px; line-height: 1.5; color: var(--muted); }
-
 .kpi {
-  font-size: 1.9rem;
+  margin: 4px 0 10px;
+  font-size: clamp(1.65rem, 4vw, 2rem);
+  line-height: 1.1;
   font-weight: 700;
   color: var(--text);
 }
 
 .badge {
-  display: inline-block;
-  padding: 5px 10px;
+  display: inline-flex;
+  align-items: center;
   border-radius: 999px;
+  padding: 5px 11px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
 
-.badge.ok { background: #ddf9ec; color: var(--ok); }
-.badge.warn { background: #fff3d6; color: #a55b00; }
-.badge.pending { background: #ecefff; color: #3e54d8; }
+.badge.ok {
+  color: var(--ok);
+  background: rgba(22, 135, 90, 0.12);
+}
+
+.badge.warn {
+  color: var(--warn);
+  background: rgba(245, 158, 11, 0.2);
+}
+
+.badge.pending {
+  color: var(--pending);
+  background: rgba(68, 88, 217, 0.14);
+}
 
 .flow {
   display: grid;
-  gap: 12px;
-  margin-top: 6px;
+  gap: 10px;
+  margin-top: 8px;
 }
 
 .step {
-  border-left: 4px solid var(--primary);
-  background: #f8f9ff;
-  border-radius: 8px;
+  border-left: 3px solid var(--primary);
+  background: var(--surface-strong);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-left-width: 3px;
+  border-radius: var(--radius-md);
   padding: 10px 12px;
+  color: var(--muted);
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.84);
+  background: var(--surface-strong);
 }
 
 .table {
   width: 100%;
   border-collapse: collapse;
+  min-width: 560px;
   font-size: 14px;
 }
+
 .table th,
 .table td {
   text-align: left;
-  padding: 10px;
-  border-bottom: 1px solid #ebefff;
+  padding: 11px 12px;
+  border-bottom: 1px solid rgba(88, 102, 176, 0.14);
+}
+
+.table th {
+  font-weight: 700;
+  color: #3f4b80;
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.callout {
+  background: var(--primary-soft);
+  border: 1px solid rgba(79, 99, 255, 0.24);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  color: #3b4680;
 }
 
 footer {
   text-align: center;
   color: var(--muted);
-  padding: 16px;
+  padding: 8px 16px 18px;
   font-size: 13px;
 }
 
-.callout {
-  background: var(--primary-soft);
-  border: 1px solid #ccd4ff;
-  border-radius: 10px;
-  padding: 12px;
-  color: #37407c;
+@media (max-width: 960px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  header {
+    padding: 14px 14px 54px;
+  }
+
+  main {
+    padding: 0 14px;
+    margin-top: -24px;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .card {
+    border-radius: 16px;
+  }
+
+  nav {
+    gap: 8px;
+  }
+
+  nav a {
+    font-size: 13px;
+    padding: 8px 10px;
+  }
 }
