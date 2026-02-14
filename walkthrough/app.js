@@ -283,3 +283,5 @@ function initAdminPage() {
 initNavbar();
 initAmbassadorPage();
 initAdminPage();
+
+initFirebaseAuth();
