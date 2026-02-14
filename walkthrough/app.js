@@ -4,10 +4,22 @@ import {
   getAuth,
   getRedirectResult,
   GoogleAuthProvider,
+  onAuthStateChanged,
   signInWithPopup,
   signInWithRedirect
 } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js';
-import { doc, getDoc, getFirestore, serverTimestamp, setDoc } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js';
+import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  getFirestore,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  setDoc,
+  where
+} from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyBERElRl3D5EHzKme6to5w2nTZFAFb8ySQ',
@@ -23,6 +35,9 @@ const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
 const authMessage = document.querySelector('#authMessage');
 const DEFAULT_COMMISSION_RATE = 0.1;
+const REFERRAL_COOKIE_KEY = 'ambassadorRef';
+const REFERRAL_STORAGE_KEY = 'ambassadorRefData';
+const ATTRIBUTION_WINDOW_DAYS = 90;
 
 const adminState = {
   leadStatusFilter: 'all',
@@ -50,12 +65,64 @@ function setCookie(name, value, days) {
   document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax`;
 }
 
+function getReferralData() {
+  try {
+    const raw = localStorage.getItem(REFERRAL_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.ref || !parsed?.capturedAt) return null;
+    return parsed;
+  } catch (error) {
+    return null;
+  }
+}
+
+function isAttributionActive(referralData) {
+  if (!referralData?.capturedAt) return false;
+  const capturedAt = new Date(referralData.capturedAt).getTime();
+  if (!capturedAt) return false;
+  const ageMs = Date.now() - capturedAt;
+  return ageMs <= ATTRIBUTION_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+}
+
+function getAmbassadorReferrer() {
+  const localRef = getReferralData();
+  if (isAttributionActive(localRef)) return localRef.ref;
+  const cookieRef = getCookie(REFERRAL_COOKIE_KEY);
+  return cookieRef || null;
+}
+
+function persistReferral(ref) {
+  const referralData = {
+    ref,
+    capturedAt: new Date().toISOString(),
+    attribution: 'first-click',
+    expiresInDays: ATTRIBUTION_WINDOW_DAYS
+  };
+
+  localStorage.setItem(REFERRAL_STORAGE_KEY, JSON.stringify(referralData));
+  localStorage.setItem(REFERRAL_COOKIE_KEY, ref);
+  setCookie(REFERRAL_COOKIE_KEY, ref, ATTRIBUTION_WINDOW_DAYS);
+}
+
+function getReferralFromPath(pathname) {
+  const match = String(pathname || '').match(/\/a\/([^/?#]+)/i);
+  return match?.[1] ? decodeURIComponent(match[1]).trim().toUpperCase() : null;
+}
+
 function trackReferralFromUrl() {
   const url = new URL(window.location.href);
-  const ref = (url.searchParams.get('ref') || '').trim().toUpperCase();
+  const ref = (url.searchParams.get('ref') || getReferralFromPath(url.pathname) || '').trim().toUpperCase();
   const target = url.searchParams.get('target') || 'ambassador.html';
 
   if (!ref) return;
+
+  const existingAttribution = getReferralData();
+  const hasActiveFirstClick = isAttributionActive(existingAttribution);
+
+  if (!hasActiveFirstClick) {
+    persistReferral(ref);
+  }
 
   demoDb.referralClicks.push({
     ambassadorId: ref,
@@ -64,8 +131,9 @@ function trackReferralFromUrl() {
     userAgent: navigator.userAgent
   });
 
-  setCookie('ref', ref, 90);
-  window.location.replace(target);
+  if (url.pathname.includes('/a/')) {
+    window.location.replace(target);
+  }
 }
 
 function getFriendlyAuthError(error) {
@@ -156,28 +224,49 @@ function initNavbar() {
   });
 }
 
-function createLead({ name, company, email }) {
+async function createLead({ name, company, email }) {
   const emailKey = String(email || '').trim().toLowerCase();
   const existingLead = demoDb.leads.find((lead) => lead.email.toLowerCase() === emailKey);
+  const ambassadorId = getAmbassadorReferrer();
 
   if (existingLead) {
-    return { created: false, reason: 'Lead finnes allerede. Ingen ny provisjon opprettes.' };
+    return {
+      created: false,
+      reason: `Lead finnes allerede. Første ambassadør beholdes: ${existingLead.ambassadorId || 'Ingen'}.`
+    };
   }
 
-  const ambassadorId = getCookie('ref') || null;
   const newLead = {
     id: `lead-${Date.now()}`,
     name,
     company,
     email,
     ambassadorId,
-    status: 'Open',
+    status: 'open',
     dealValue: 0,
     commissionAmount: 0,
+    value: 0,
+    commissionRate: DEFAULT_COMMISSION_RATE,
     createdAt: new Date().toISOString()
   };
 
   demoDb.leads.unshift(newLead);
+
+  try {
+    await addDoc(collection(db, 'leads'), {
+      name,
+      company,
+      email,
+      ambassadorId: ambassadorId || null,
+      status: 'open',
+      createdAt: serverTimestamp(),
+      value: 0,
+      commissionRate: DEFAULT_COMMISSION_RATE
+    });
+  } catch (error) {
+    // MVP fallback: keep local lead even if Firestore write is blocked by local rules.
+  }
+
   return {
     created: true,
     lead: newLead
@@ -210,7 +299,7 @@ function renderAdmin() {
           <td>${lead.company}</td>
           <td>${ambassadorLabel}</td>
           <td><span class="badge info">${lead.status}</span></td>
-          <td><input type="number" class="deal-input" data-id="${lead.id}" min="0" value="${lead.dealValue || 0}" ${lead.status === 'Won' ? '' : 'disabled'} /></td>
+          <td><input type="number" class="deal-input" data-id="${lead.id}" min="0" value="${lead.dealValue || lead.value || 0}" ${['won', 'approved'].includes(String(lead.status || '').toLowerCase()) ? '' : 'disabled'} /></td>
           <td>${currency(lead.commissionAmount || 0)}</td>
           <td><button class="btn-secondary open-status-modal" data-id="${lead.id}" type="button">Endre status</button></td>
         </tr>`;
@@ -257,6 +346,25 @@ function renderAdmin() {
       </tr>`;
     })
     .join('');
+}
+
+function recalculateLeadCommission(lead) {
+  const normalizedStatus = String(lead.status || '').toLowerCase();
+  const approved = normalizedStatus === 'approved' || normalizedStatus === 'won';
+  const value = Number(lead.dealValue ?? lead.value ?? 0);
+  const commissionRate = Number(lead.commissionRate ?? DEFAULT_COMMISSION_RATE);
+
+  if (!approved) {
+    lead.dealValue = 0;
+    lead.value = 0;
+    lead.commissionAmount = 0;
+    return;
+  }
+
+  lead.dealValue = value;
+  lead.value = value;
+  lead.commissionRate = commissionRate;
+  lead.commissionAmount = Math.round(value * commissionRate);
 }
 
 function openStatusModal(leadId) {
@@ -317,7 +425,8 @@ function initAdminPage() {
 
     const lead = demoDb.leads.find((item) => item.id === dealInput.dataset.id);
     lead.dealValue = Number(dealInput.value || 0);
-    lead.commissionAmount = Math.round(lead.dealValue * DEFAULT_COMMISSION_RATE);
+    lead.value = lead.dealValue;
+    recalculateLeadCommission(lead);
     renderAdmin();
   });
 
@@ -362,10 +471,7 @@ function initAdminPage() {
     if (!adminState.pendingStatusLeadId || !modalSelect) return;
     const lead = demoDb.leads.find((item) => item.id === adminState.pendingStatusLeadId);
     lead.status = modalSelect.value;
-    if (lead.status !== 'Won') {
-      lead.dealValue = 0;
-      lead.commissionAmount = 0;
-    }
+    recalculateLeadCommission(lead);
     closeStatusModal();
     renderAdmin();
   });
@@ -379,22 +485,24 @@ function getAmbassadorLeads(ambassadorId) {
 
 function renderAmbassadorDashboard() {
   const totalLeads = document.querySelector('#metricLeads');
-  const totalWon = document.querySelector('#metricWon');
+  const totalRevenue = document.querySelector('#metricRevenue');
   const totalCommission = document.querySelector('#metricCommission');
   const availablePayout = document.querySelector('#metricAvailable');
+  const pipelineLeads = document.querySelector('#metricPipeline');
   const leadList = document.querySelector('#leadList');
   const emptyState = document.querySelector('#ambassadorEmptyState');
 
-  if (!totalLeads || !totalWon || !totalCommission || !availablePayout || !leadList) return;
+  if (!totalLeads || !totalRevenue || !totalCommission || !availablePayout || !pipelineLeads || !leadList) return;
 
   const ambassadorId = 'AMB123';
   const totals = calculateAmbassadorTotals(ambassadorId);
   const leads = getAmbassadorLeads(ambassadorId);
 
   totalLeads.textContent = String(totals.leads);
-  totalWon.textContent = String(totals.won);
+  totalRevenue.textContent = currency(totals.revenue);
   totalCommission.textContent = currency(totals.earned);
   availablePayout.textContent = currency(totals.available);
+  pipelineLeads.textContent = String(totals.pipeline);
 
   leadList.innerHTML = leads
     .map(
@@ -433,15 +541,15 @@ function initLandingPage() {
   const leadMessage = document.querySelector('#leadMessage');
   if (!leadForm || !leadMessage) return;
 
-  const refCookie = getCookie('ref');
+  const refCookie = getAmbassadorReferrer();
   const attributionElement = document.querySelector('#attributionInfo');
   if (attributionElement) {
     attributionElement.textContent = refCookie
-      ? `Aktiv attribution-cookie: ${refCookie} (first click, 90 dager)`
-      : 'Ingen attribution-cookie funnet.';
+      ? `Aktiv attribution: ${refCookie} (first click, 90 dager)`
+      : 'Ingen aktiv attribution funnet.';
   }
 
-  leadForm.addEventListener('submit', (event) => {
+  leadForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(leadForm);
     const payload = {
@@ -450,7 +558,7 @@ function initLandingPage() {
       email: String(formData.get('email') || '')
     };
 
-    const result = createLead(payload);
+    const result = await createLead(payload);
     if (!result.created) {
       leadMessage.textContent = result.reason;
       leadMessage.style.color = 'var(--color-warning)';
@@ -463,6 +571,27 @@ function initLandingPage() {
   });
 }
 
+
+function subscribeToAmbassadorLeads() {
+  if (!window.location.pathname.includes('ambassador')) return;
+
+  onAuthStateChanged(auth, (user) => {
+    if (!user) return;
+
+    const leadsQuery = query(collection(db, 'leads'), where('ambassadorId', '==', user.uid));
+    onSnapshot(leadsQuery, (snapshot) => {
+      const firestoreLeads = snapshot.docs.map((docSnapshot) => ({
+        id: docSnapshot.id,
+        ...docSnapshot.data()
+      }));
+
+      if (!firestoreLeads.length) return;
+      demoDb.leads = firestoreLeads;
+      renderAmbassadorDashboard();
+    });
+  });
+}
+
 trackReferralFromUrl();
 handleRedirectLoginResult();
 initNavbar();
@@ -470,6 +599,7 @@ initLandingPage();
 initAdminPage();
 initAmbassadorTabs();
 renderAmbassadorDashboard();
+subscribeToAmbassadorLeads();
 
 const loginGoogleBtn = document.querySelector('#loginGoogle');
 const registerGoogleBtn = document.querySelector('#registerGoogle');

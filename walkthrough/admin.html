@@ -40,12 +40,12 @@
                 <label>Status
                   <select id="leadStatusFilter">
                     <option value="all">Alle</option>
-                    <option value="Open">Open</option>
-                    <option value="Contacted">Contacted</option>
-                    <option value="Meeting">Meeting</option>
-                    <option value="Offered">Offered</option>
-                    <option value="Won">Won</option>
-                    <option value="Lost">Lost</option>
+                    <option value="open">open</option>
+                    <option value="meeting">meeting</option>
+                    <option value="offer_sent">offer_sent</option>
+                    <option value="approved">approved</option>
+                    <option value="won">won</option>
+                    <option value="lost">lost</option>
                   </select>
                 </label>
                 <label>Ambassadør
@@ -64,7 +64,7 @@
                 <tbody id="adminLeadBody"></tbody>
               </table>
             </div>
-            <p class="muted">Når status settes til <strong>Won</strong>, aktiveres felt for deal value med provisjon på 10%.</p>
+            <p class="muted">Når status settes til <strong>approved</strong> (eller <strong>won</strong>) beregnes provisjon automatisk: <code>commission = value * commissionRate</code>.</p>
           </section>
 
           <section class="card">
