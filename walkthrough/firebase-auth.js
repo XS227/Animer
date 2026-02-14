@@ -15,6 +15,35 @@ function hasValidFirebaseConfig(config) {
   return Object.values(config).every((value) => value && !String(value).startsWith('DIN_'));
 }
 
+
+function getDomainVariants(hostname) {
+  const host = String(hostname || '').trim().toLowerCase();
+  if (!host) return [];
+
+  if (host.startsWith('www.')) {
+    return [host, host.replace(/^www\./, '')];
+  }
+
+  return [host, `www.${host}`];
+}
+
+function getFriendlyAuthError(error) {
+  if (error?.code === 'auth/unauthorized-domain') {
+    const domainHints = getDomainVariants(window.location.hostname).join(' og ');
+    return `Innlogging feilet: Du logger inn fra ${window.location.hostname}, men dette domenet er ikke godkjent i Firebase Authentication. Legg til ${domainHints} i Firebase Console → Authentication → Settings → Authorized domains.`;
+  }
+
+  if (error?.code === 'auth/operation-not-allowed') {
+    return 'Innlogging feilet: Google-innlogging er ikke aktivert i Firebase (Authentication → Sign-in method).';
+  }
+
+  if (error?.code === 'auth/popup-blocked') {
+    return 'Innlogging feilet: Nettleseren blokkerte popup-vinduet. Tillat popup og prøv igjen.';
+  }
+
+  return `Innlogging feilet: ${error?.message || 'Ukjent feil.'}`;
+}
+
 export function initFirebaseAuth() {
   const loginGoogleBtn = document.querySelector('#loginGoogle');
   const registerGoogleBtn = document.querySelector('#registerGoogle');
@@ -52,7 +81,7 @@ export function initFirebaseAuth() {
 
       authMessage.textContent = `Innlogget som ${user.displayName}`;
     } catch (error) {
-      authMessage.textContent = `Innlogging feilet: ${error.message}`;
+      authMessage.textContent = getFriendlyAuthError(error);
     }
   };
 
