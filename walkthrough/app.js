@@ -1,5 +1,31 @@
 import { initAmbassadorCharts } from './charts/index.js';
 import { currency, demoDb } from './data-store.js';
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js';
+import { getAnalytics } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-analytics.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js';
+
+const firebaseConfig = {
+  apiKey: 'AIzaSyBERElRl3D5EHzKme6to5w2nTZFAFb8ySQ',
+  authDomain: 'animer-ambassador-mvp.firebaseapp.com',
+  projectId: 'animer-ambassador-mvp',
+  storageBucket: 'animer-ambassador-mvp.firebasestorage.app',
+  messagingSenderId: '793382601384',
+  appId: '1:793382601384:web:539e5516ac484f9dc6789d',
+  measurementId: 'G-34RDGR7ET2'
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+getAnalytics(firebaseApp);
+const auth = getAuth(firebaseApp);
+
+window.loginWithGoogle = async () => {
+  const provider = new GoogleAuthProvider();
+  try {
+    await signInWithPopup(auth, provider);
+  } catch (error) {
+    console.error('Google-innlogging feilet.', error);
+  }
+};
 
 function initNavbar() {
   const navToggle = document.querySelector('#navToggle');
