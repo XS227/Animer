@@ -1,25 +1,8 @@
-import { AMBASSADOR_STATUSES, LEAD_STATUSES, calculateAmbassadorTotals, currency, demoDb } from './data-store.js';
+import { AMBASSADOR_STATUSES, LEAD_STATUSES, calculateAmbassadorTotals, currency, demoDb, formatDate } from './data-store.js';
+import { initAmbassadorCharts, refreshAmbassadorCharts } from './charts/index.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js';
-import {
-  getAuth,
-  getRedirectResult,
-  GoogleAuthProvider,
-  onAuthStateChanged,
-  signInWithPopup,
-  signInWithRedirect
-} from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js';
-import {
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  getFirestore,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  setDoc,
-  where
-} from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js';
+import { getAuth, getRedirectResult, GoogleAuthProvider, signInWithPopup, signInWithRedirect } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js';
+import { doc, getDoc, getFirestore, serverTimestamp, setDoc } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyBERElRl3D5EHzKme6to5w2nTZFAFb8ySQ',
@@ -34,23 +17,17 @@ const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
 const authMessage = document.querySelector('#authMessage');
-const DEFAULT_COMMISSION_RATE = 0.1;
-const REFERRAL_COOKIE_KEY = 'ambassadorRef';
-const REFERRAL_STORAGE_KEY = 'ambassadorRefData';
-const ATTRIBUTION_WINDOW_DAYS = 90;
 
-const adminState = {
-  leadStatusFilter: 'all',
-  ambassadorFilter: 'all',
-  pendingStatusLeadId: null
-};
-
-const ambassadorState = {
-  leadFilter: 'all'
-};
+const adminState = { leadStatusFilter: 'all', ambassadorFilter: 'all', pendingStatusLeadId: null };
+const ambassadorState = { leadFilter: 'all', selectedSharePlatform: null };
 
 function setAuthMessage(message) {
   if (authMessage) authMessage.textContent = message;
+}
+
+function setCookie(name, value, days) {
+  const expires = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toUTCString();
+  document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax`;
 }
 
 function getCookie(name) {
@@ -60,9 +37,46 @@ function getCookie(name) {
   return null;
 }
 
-function setCookie(name, value, days) {
-  const expires = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toUTCString();
-  document.cookie = `${name}=${value}; expires=${expires}; path=/; SameSite=Lax`;
+function initTheme() {
+  const toggle = document.querySelector('#themeToggle');
+  const root = document.body;
+  const saved = localStorage.getItem('theme') || 'light';
+  root.setAttribute('data-theme', saved);
+  if (toggle) toggle.textContent = saved === 'dark' ? '☀️' : '🌙';
+
+  toggle?.addEventListener('click', () => {
+    const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    localStorage.setItem('theme', next);
+    toggle.textContent = next === 'dark' ? '☀️' : '🌙';
+    refreshAmbassadorCharts();
+  });
+}
+
+function initAuthAction() {
+  const authAction = document.querySelector('#authAction');
+  const avatar = document.querySelector('#topbarAvatar');
+  const isLoggedIn = localStorage.getItem('isLoggedIn') !== 'false';
+
+  if (avatar) avatar.src = demoDb.userProfile.avatarUrl;
+  if (authAction) authAction.textContent = isLoggedIn ? 'Logg ut' : 'Logg inn';
+
+  authAction?.addEventListener('click', () => {
+    const next = authAction.textContent === 'Logg ut' ? 'Logg inn' : 'Logg ut';
+    authAction.textContent = next;
+    localStorage.setItem('isLoggedIn', String(next === 'Logg ut'));
+    setAuthMessage(next === 'Logg ut' ? 'Du er logget inn.' : 'Du er logget ut.');
+  });
+}
+
+function initNavbar() {
+  const navToggle = document.querySelector('#navToggle');
+  const sidebar = document.querySelector('.sidebar');
+  if (!navToggle || !sidebar) return;
+  navToggle.addEventListener('click', () => {
+    const isOpen = sidebar.classList.toggle('open');
+    navToggle.setAttribute('aria-expanded', String(isOpen));
+  });
 }
 
 function getReferralData() {
@@ -114,61 +128,25 @@ function trackReferralFromUrl() {
   const url = new URL(window.location.href);
   const ref = (url.searchParams.get('ref') || getReferralFromPath(url.pathname) || '').trim().toUpperCase();
   const target = url.searchParams.get('target') || 'ambassador.html';
-
   if (!ref) return;
 
-  const existingAttribution = getReferralData();
-  const hasActiveFirstClick = isAttributionActive(existingAttribution);
-
-  if (!hasActiveFirstClick) {
-    persistReferral(ref);
-  }
-
-  demoDb.referralClicks.push({
-    ambassadorId: ref,
-    timestamp: new Date().toISOString(),
-    ip: 'client-captured',
-    userAgent: navigator.userAgent
-  });
-
-  if (url.pathname.includes('/a/')) {
-    window.location.replace(target);
-  }
-}
-
-function getFriendlyAuthError(error) {
-  if (error?.code === 'auth/popup-closed-by-user') return 'Innlogging avbrutt.';
-  if (error?.code === 'auth/popup-blocked') return 'Popup blokkert. Vi prøver redirect-innlogging.';
-  if (error?.code === 'auth/unauthorized-domain') return 'Domenet er ikke whitelistet i Firebase Authentication.';
-  if (error?.code === 'permission-denied') {
-    return 'Innlogging feilet: Mangler tilgang til Firestore. Oppdater sikkerhetsregler for ambassadors-samlingen.';
-  }
-  return `Innlogging feilet: ${error?.message || 'Ukjent feil.'}`;
+  demoDb.referralClicks.push({ ambassadorId: ref, timestamp: new Date().toISOString(), userAgent: navigator.userAgent });
+  setCookie('ref', ref, 90);
+  window.location.replace(target);
 }
 
 async function ensureAmbassadorProfile(user) {
-  try {
-    const ambassadorRef = doc(db, 'ambassadors', user.uid);
-    const ambassadorSnap = await getDoc(ambassadorRef);
-
-    if (!ambassadorSnap.exists()) {
-      await setDoc(ambassadorRef, {
-        id: user.uid,
-        name: user.displayName,
-        email: user.email,
-        status: 'pending',
-        commissionRate: DEFAULT_COMMISSION_RATE,
-        createdAt: serverTimestamp()
-      });
-    }
-
-    return { profileReady: true };
-  } catch (error) {
-    if (error?.code === 'permission-denied') {
-      return { profileReady: false, error };
-    }
-
-    throw error;
+  const ambassadorRef = doc(db, 'ambassadors', user.uid);
+  const ambassadorSnap = await getDoc(ambassadorRef);
+  if (!ambassadorSnap.exists()) {
+    await setDoc(ambassadorRef, {
+      id: user.uid,
+      name: user.displayName,
+      email: user.email,
+      status: 'pending',
+      commissionRate: 0.1,
+      createdAt: serverTimestamp()
+    });
   }
 }
 
@@ -176,66 +154,47 @@ async function handleRedirectLoginResult() {
   try {
     const result = await getRedirectResult(auth);
     if (!result?.user) return;
-    const syncStatus = await ensureAmbassadorProfile(result.user);
-    if (!syncStatus.profileReady) {
-      setAuthMessage(`Innlogget som ${result.user.email}, men profil kunne ikke lagres (Firestore-regler).`);
-      return;
-    }
-    setAuthMessage(`Innlogget som ${result.user.email}. Status: Pending (manuell godkjenning).`);
-  } catch (error) {
-    setAuthMessage(getFriendlyAuthError(error));
+    await ensureAmbassadorProfile(result.user);
+    demoDb.userProfile.fullName = result.user.displayName || demoDb.userProfile.fullName;
+    demoDb.userProfile.email = result.user.email || demoDb.userProfile.email;
+    demoDb.userProfile.avatarUrl = result.user.photoURL || demoDb.userProfile.avatarUrl;
+    setAuthMessage(`Innlogget som ${result.user.email}`);
+  } catch {
+    // ignore on pages without auth flow
   }
 }
 
-window.loginWithGoogle = async (event) => {
-  const button = event?.currentTarget;
+window.loginWithGoogle = async () => {
   const provider = new GoogleAuthProvider();
-
-  if (button instanceof HTMLButtonElement) button.disabled = true;
-
   try {
     const result = await signInWithPopup(auth, provider);
-    const syncStatus = await ensureAmbassadorProfile(result.user);
-    if (!syncStatus.profileReady) {
-      setAuthMessage(`Innlogget som ${result.user.email}, men profil kunne ikke lagres (Firestore-regler).`);
-      return;
-    }
-    setAuthMessage(`Innlogget som ${result.user.email}. Status: Pending (manuell godkjenning).`);
+    await ensureAmbassadorProfile(result.user);
+    demoDb.userProfile.fullName = result.user.displayName || demoDb.userProfile.fullName;
+    demoDb.userProfile.email = result.user.email || demoDb.userProfile.email;
+    demoDb.userProfile.provider = 'Google';
+    demoDb.userProfile.avatarUrl = result.user.photoURL || demoDb.userProfile.avatarUrl;
+    localStorage.setItem('isLoggedIn', 'true');
+    setAuthMessage(`Innlogget som ${result.user.email}.`);
+    syncProfileUi();
   } catch (error) {
-    if (['auth/popup-blocked', 'auth/internal-error'].includes(error?.code)) {
-      setAuthMessage('Popup feilet. Sender til Google redirect...');
+    if (error?.code === 'auth/popup-blocked') {
       await signInWithRedirect(auth, provider);
       return;
     }
-    setAuthMessage(getFriendlyAuthError(error));
-  } finally {
-    if (button instanceof HTMLButtonElement) button.disabled = false;
+    setAuthMessage('Innlogging feilet.');
   }
 };
 
-function initNavbar() {
-  const navToggle = document.querySelector('#navToggle');
-  const sidebar = document.querySelector('.sidebar');
-  if (!navToggle || !sidebar) return;
-
-  navToggle.addEventListener('click', () => {
-    const isOpen = sidebar.classList.toggle('open');
-    navToggle.setAttribute('aria-expanded', String(isOpen));
-  });
+function loginWithFacebookDemo() {
+  demoDb.userProfile.provider = 'Facebook';
+  demoDb.userProfile.avatarUrl = 'https://i.pravatar.cc/120?img=32';
+  localStorage.setItem('isLoggedIn', 'true');
+  setAuthMessage('Facebook demo-login aktivert for MVP.');
+  syncProfileUi();
 }
 
-async function createLead({ name, company, email }) {
-  const emailKey = String(email || '').trim().toLowerCase();
-  const existingLead = demoDb.leads.find((lead) => lead.email.toLowerCase() === emailKey);
-  const ambassadorId = getAmbassadorReferrer();
-
-  if (existingLead) {
-    return {
-      created: false,
-      reason: `Lead finnes allerede. Første ambassadør beholdes: ${existingLead.ambassadorId || 'Ingen'}.`
-    };
-  }
-
+function createLead({ name, company, email }) {
+  const ambassadorId = getCookie('ref') || 'AMB123';
   const newLead = {
     id: `lead-${Date.now()}`,
     name,
@@ -249,28 +208,44 @@ async function createLead({ name, company, email }) {
     commissionRate: DEFAULT_COMMISSION_RATE,
     createdAt: new Date().toISOString()
   };
-
   demoDb.leads.unshift(newLead);
+  return newLead;
+}
 
-  try {
-    await addDoc(collection(db, 'leads'), {
-      name,
-      company,
-      email,
-      ambassadorId: ambassadorId || null,
-      status: 'open',
-      createdAt: serverTimestamp(),
-      value: 0,
-      commissionRate: DEFAULT_COMMISSION_RATE
-    });
-  } catch (error) {
-    // MVP fallback: keep local lead even if Firestore write is blocked by local rules.
-  }
+function initLandingPage() {
+  const leadForm = document.querySelector('#leadForm');
+  const leadMessage = document.querySelector('#leadMessage');
+  const registerForm = document.querySelector('#registerForm');
+  const registerMessage = document.querySelector('#registerMessage');
+  if (!leadForm) return;
 
-  return {
-    created: true,
-    lead: newLead
-  };
+  leadForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formData = new FormData(leadForm);
+    const lead = createLead({ name: formData.get('name'), company: formData.get('company'), email: formData.get('email') });
+    leadMessage.textContent = `Lead lagret: ${lead.company}`;
+    leadForm.reset();
+  });
+
+  registerForm?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const formData = new FormData(registerForm);
+    demoDb.userProfile.fullName = String(formData.get('fullName') || '');
+    demoDb.userProfile.email = String(formData.get('email') || '');
+    demoDb.userProfile.phone = String(formData.get('phone') || '');
+    demoDb.userProfile.provider = 'E-post';
+    registerMessage.textContent = 'Konto registrert lokalt i MVP.';
+    syncProfileUi();
+  });
+}
+
+function getFilteredLeads() {
+  return demoDb.leads.filter((lead) => {
+    const statusOk = adminState.leadStatusFilter === 'all' || lead.status === adminState.leadStatusFilter;
+    const ambassador = lead.ambassadorId || 'Ingen';
+    const ambassadorOk = adminState.ambassadorFilter === 'all' || ambassador === adminState.ambassadorFilter;
+    return statusOk && ambassadorOk;
+  });
 }
 
 function getFilteredLeads() {
@@ -290,62 +265,43 @@ function renderAdmin() {
   if (!leadBody || !ambassadorBody || !payoutBody) return;
 
   const filteredLeads = getFilteredLeads();
-
-  leadBody.innerHTML = filteredLeads
-    .map((lead) => {
-      const ambassadorLabel = lead.ambassadorId || 'Ingen';
-      return `
-        <tr>
-          <td>${lead.company}</td>
-          <td>${ambassadorLabel}</td>
-          <td><span class="badge info">${lead.status}</span></td>
-          <td><input type="number" class="deal-input" data-id="${lead.id}" min="0" value="${lead.dealValue || lead.value || 0}" ${['won', 'approved'].includes(String(lead.status || '').toLowerCase()) ? '' : 'disabled'} /></td>
-          <td>${currency(lead.commissionAmount || 0)}</td>
-          <td><button class="btn-secondary open-status-modal" data-id="${lead.id}" type="button">Endre status</button></td>
-        </tr>`;
-    })
-    .join('');
+  leadBody.innerHTML = filteredLeads.map((lead) => `
+    <tr>
+      <td>${lead.company}</td>
+      <td>${lead.name}</td>
+      <td>${lead.ambassadorId || 'Ingen'}</td>
+      <td><span class="badge info">${lead.status}</span></td>
+      <td><input type="number" class="deal-input" data-id="${lead.id}" min="0" value="${lead.dealValue || 0}" ${lead.status === 'Won' ? '' : 'disabled'} /></td>
+      <td>${currency(lead.commissionAmount || 0)}</td>
+      <td><button class="btn-secondary open-status-modal" data-id="${lead.id}">Endre</button></td>
+    </tr>`).join('');
 
   if (leadEmptyState) leadEmptyState.hidden = filteredLeads.length > 0;
 
-  ambassadorBody.innerHTML = demoDb.ambassadors
-    .map((ambassador) => {
-      const totals = calculateAmbassadorTotals(ambassador.id);
-      const statusBadge = ambassador.status === 'Active' ? 'ok' : ambassador.status === 'Paused' ? 'paused' : 'pending';
-      const approveButton = ambassador.status === 'Pending'
-        ? `<button class="btn-primary approve-ambassador" data-id="${ambassador.id}" type="button">Godkjenn</button>`
-        : '<span class="muted">-</span>';
-
-      return `
+  ambassadorBody.innerHTML = demoDb.ambassadors.map((ambassador) => {
+    const totals = calculateAmbassadorTotals(ambassador.id);
+    const statusBadge = ambassador.status === 'Active' ? 'ok' : ambassador.status === 'Pending' ? 'pending' : 'info';
+    return `
       <tr>
-        <td>${ambassador.name}</td>
+        <td>${ambassador.name}<br/><span class="muted">${ambassador.email}</span></td>
+        <td><span class="badge ${statusBadge}">${ambassador.status}</span></td>
+        <td>${totals.leads}</td>
+        <td>${currency(totals.revenue)}</td>
+        <td><input class="commission-input" data-id="${ambassador.id}" type="number" min="1" max="100" value="${Math.round(ambassador.commissionRate * 100)}" />%</td>
+        <td>${currency(totals.earned)}</td>
         <td>
           <select class="ambassador-status" data-id="${ambassador.id}">
             ${AMBASSADOR_STATUSES.map((status) => `<option value="${status}" ${status === ambassador.status ? 'selected' : ''}>${status}</option>`).join('')}
           </select>
           <span class="badge ${statusBadge}">${ambassador.status}</span>
         </td>
-        <td>${totals.leads}</td>
-        <td>${currency(totals.revenue)}</td>
-        <td>${currency(totals.earned)}</td>
-        <td>${approveButton}</td>
       </tr>`;
-    })
-    .join('');
+  }).join('');
 
-  payoutBody.innerHTML = demoDb.ambassadors
-    .map((ambassador) => {
-      const totals = calculateAmbassadorTotals(ambassador.id);
-      return `
-      <tr>
-        <td>${ambassador.name}</td>
-        <td>${currency(totals.earned)}</td>
-        <td>${currency(totals.paidOut)}</td>
-        <td>${currency(totals.available)}</td>
-        <td><button class="btn-ghost mark-paid" data-id="${ambassador.id}">Marker utbetalt</button></td>
-      </tr>`;
-    })
-    .join('');
+  payoutBody.innerHTML = demoDb.ambassadors.map((ambassador) => {
+    const totals = calculateAmbassadorTotals(ambassador.id);
+    return `<tr><td>${ambassador.name}</td><td>${currency(totals.earned)}</td><td>${currency(totals.paidOut)}</td><td>${currency(totals.available)}</td><td><button class="btn-secondary mark-paid" data-id="${ambassador.id}">Marker utbetalt</button></td></tr>`;
+  }).join('');
 }
 
 function recalculateLeadCommission(lead) {
@@ -392,19 +348,16 @@ function initAdminPage() {
   const payoutBody = document.querySelector('#adminPayoutBody');
   const leadStatusFilter = document.querySelector('#leadStatusFilter');
   const leadAmbassadorFilter = document.querySelector('#leadAmbassadorFilter');
-  const closeModalButton = document.querySelector('#closeStatusModal');
-  const saveModalButton = document.querySelector('#saveStatusModal');
   const modalSelect = document.querySelector('#statusModalSelect');
   const modalBackdrop = document.querySelector('#statusModalBackdrop');
-
   if (!leadBody || !ambassadorBody || !payoutBody) return;
 
+  if (leadStatusFilter) {
+    leadStatusFilter.innerHTML = `<option value="all">Status</option>${LEAD_STATUSES.map((status) => `<option value="${status}">${status}</option>`).join('')}`;
+  }
   if (leadAmbassadorFilter) {
     const options = ['all', ...new Set(demoDb.leads.map((lead) => lead.ambassadorId || 'Ingen'))];
-    leadAmbassadorFilter.innerHTML = options.map((option) => {
-      const label = option === 'all' ? 'Alle' : option;
-      return `<option value="${option}">${label}</option>`;
-    }).join('');
+    leadAmbassadorFilter.innerHTML = options.map((value) => `<option value="${value}">${value === 'all' ? 'Ambassadør' : value}</option>`).join('');
   }
 
   renderAdmin();
@@ -413,52 +366,72 @@ function initAdminPage() {
     adminState.leadStatusFilter = event.target.value;
     renderAdmin();
   });
-
   leadAmbassadorFilter?.addEventListener('change', (event) => {
     adminState.ambassadorFilter = event.target.value;
     renderAdmin();
   });
 
+  leadBody.addEventListener('click', (event) => {
+    const button = event.target.closest('.open-status-modal');
+    if (!button || !modalSelect || !modalBackdrop) return;
+    const lead = demoDb.leads.find((item) => item.id === button.dataset.id);
+    if (!lead) return;
+    adminState.pendingStatusLeadId = lead.id;
+    modalSelect.innerHTML = LEAD_STATUSES.map((status) => `<option value="${status}" ${status === lead.status ? 'selected' : ''}>${status}</option>`).join('');
+    modalBackdrop.classList.add('open');
+  });
+
   leadBody.addEventListener('change', (event) => {
     const dealInput = event.target.closest('.deal-input');
     if (!dealInput) return;
-
     const lead = demoDb.leads.find((item) => item.id === dealInput.dataset.id);
+    if (!lead) return;
     lead.dealValue = Number(dealInput.value || 0);
-    lead.value = lead.dealValue;
-    recalculateLeadCommission(lead);
+    const ambassador = demoDb.ambassadors.find((item) => item.id === lead.ambassadorId);
+    lead.commissionAmount = Math.round(lead.dealValue * Number(ambassador?.commissionRate || 0));
     renderAdmin();
-  });
-
-  leadBody.addEventListener('click', (event) => {
-    const modalButton = event.target.closest('.open-status-modal');
-    if (!modalButton) return;
-    openStatusModal(modalButton.dataset.id);
   });
 
   ambassadorBody.addEventListener('change', (event) => {
     const statusSelect = event.target.closest('.ambassador-status');
-    if (!statusSelect) return;
-    const ambassador = demoDb.ambassadors.find((item) => item.id === statusSelect.dataset.id);
-    ambassador.status = statusSelect.value;
-    renderAdmin();
-  });
+    const commissionInput = event.target.closest('.commission-input');
 
-  ambassadorBody.addEventListener('click', (event) => {
-    const approveButton = event.target.closest('.approve-ambassador');
-    if (!approveButton) return;
-    const ambassador = demoDb.ambassadors.find((item) => item.id === approveButton.dataset.id);
-    ambassador.status = 'Active';
-    renderAdmin();
+    if (statusSelect) {
+      const ambassador = demoDb.ambassadors.find((item) => item.id === statusSelect.dataset.id);
+      if (!ambassador) return;
+      ambassador.status = statusSelect.value;
+      renderAdmin();
+      return;
+    }
+
+    if (commissionInput) {
+      const ambassador = demoDb.ambassadors.find((item) => item.id === commissionInput.dataset.id);
+      if (!ambassador) return;
+      ambassador.commissionRate = Math.max(0.01, Math.min(1, Number(commissionInput.value || 10) / 100));
+      renderAdmin();
+    }
   });
 
   payoutBody.addEventListener('click', (event) => {
     const paidButton = event.target.closest('.mark-paid');
     if (!paidButton) return;
-    const ambassadorId = paidButton.dataset.id;
-    const totals = calculateAmbassadorTotals(ambassadorId);
+    const totals = calculateAmbassadorTotals(paidButton.dataset.id);
     if (totals.available <= 0) return;
-    demoDb.payouts.push({ ambassadorId, paidOut: totals.available });
+    demoDb.payouts.push({ ambassadorId: paidButton.dataset.id, paidOut: totals.available });
+    renderAdmin();
+  });
+
+  document.querySelector('#closeStatusModal')?.addEventListener('click', () => modalBackdrop?.classList.remove('open'));
+  document.querySelector('#saveStatusModal')?.addEventListener('click', () => {
+    if (!modalSelect || !adminState.pendingStatusLeadId) return;
+    const lead = demoDb.leads.find((item) => item.id === adminState.pendingStatusLeadId);
+    if (!lead) return;
+    lead.status = modalSelect.value;
+    if (lead.status !== 'Won') {
+      lead.dealValue = 0;
+      lead.commissionAmount = 0;
+    }
+    modalBackdrop?.classList.remove('open');
     renderAdmin();
   });
 
@@ -483,91 +456,149 @@ function getAmbassadorLeads(ambassadorId) {
   return leads.filter((lead) => lead.status === ambassadorState.leadFilter);
 }
 
+function getAmbassadorLeads(ambassadorId) {
+  const leads = demoDb.leads.filter((lead) => lead.ambassadorId === ambassadorId);
+  if (ambassadorState.leadFilter === 'all') return leads;
+  return leads.filter((lead) => lead.status === ambassadorState.leadFilter);
+}
+
 function renderAmbassadorDashboard() {
-  const totalLeads = document.querySelector('#metricLeads');
-  const totalRevenue = document.querySelector('#metricRevenue');
-  const totalCommission = document.querySelector('#metricCommission');
-  const availablePayout = document.querySelector('#metricAvailable');
-  const pipelineLeads = document.querySelector('#metricPipeline');
-  const leadList = document.querySelector('#leadList');
-  const emptyState = document.querySelector('#ambassadorEmptyState');
-
-  if (!totalLeads || !totalRevenue || !totalCommission || !availablePayout || !pipelineLeads || !leadList) return;
-
   const ambassadorId = 'AMB123';
-  const totals = calculateAmbassadorTotals(ambassadorId);
   const leads = getAmbassadorLeads(ambassadorId);
+  const totals = calculateAmbassadorTotals(ambassadorId);
 
-  totalLeads.textContent = String(totals.leads);
-  totalRevenue.textContent = currency(totals.revenue);
-  totalCommission.textContent = currency(totals.earned);
-  availablePayout.textContent = currency(totals.available);
-  pipelineLeads.textContent = String(totals.pipeline);
+  const leadList = document.querySelector('#leadList');
+  if (!leadList) return;
 
-  leadList.innerHTML = leads
-    .map(
-      (lead) => `<tr><td>${lead.company}</td><td>${lead.status}</td><td>${currency(lead.dealValue)}</td><td>${currency(lead.commissionAmount)}</td></tr>`
-    )
-    .join('');
+  document.querySelector('#welcomeName')?.replaceChildren(document.createTextNode(demoDb.userProfile.fullName));
+  document.querySelector('#metricLeads')?.replaceChildren(document.createTextNode(String(totals.leads)));
+  document.querySelector('#metricWon')?.replaceChildren(document.createTextNode(String(totals.won)));
+  document.querySelector('#metricCommission')?.replaceChildren(document.createTextNode(currency(totals.earned)));
+  document.querySelector('#metricAvailable')?.replaceChildren(document.createTextNode(currency(totals.available)));
 
+  leadList.innerHTML = leads.map((lead) => `<tr><td>${lead.company}</td><td>${lead.name}</td><td>${lead.status}</td><td>${currency(lead.dealValue)}</td><td>${currency(lead.commissionAmount)}</td></tr>`).join('');
+  const emptyState = document.querySelector('#ambassadorEmptyState');
   if (emptyState) emptyState.hidden = leads.length > 0;
-
-  const copyBtn = document.querySelector('#copyLink');
-  copyBtn?.addEventListener('click', async () => {
-    await navigator.clipboard.writeText('https://animer.no/a/AMB123');
-    copyBtn.textContent = 'Lenke kopiert ✓';
-    setTimeout(() => {
-      copyBtn.textContent = 'Kopier lenke';
-    }, 1200);
-  });
 }
 
 function initAmbassadorTabs() {
   const tabs = document.querySelector('#ambassadorLeadTabs');
   if (!tabs) return;
-
   tabs.addEventListener('click', (event) => {
     const tab = event.target.closest('.tab-btn');
     if (!tab) return;
     ambassadorState.leadFilter = tab.dataset.filter;
-    tabs.querySelectorAll('.tab-btn').forEach((button) => button.classList.remove('active'));
+    tabs.querySelectorAll('.tab-btn').forEach((item) => item.classList.remove('active'));
     tab.classList.add('active');
     renderAmbassadorDashboard();
   });
 }
 
-function initLandingPage() {
-  const leadForm = document.querySelector('#leadForm');
-  const leadMessage = document.querySelector('#leadMessage');
-  if (!leadForm || !leadMessage) return;
+function initShareFlow() {
+  const iconContainer = document.querySelector('.social-icons');
+  const modal = document.querySelector('#shareModalBackdrop');
+  const platformLabel = document.querySelector('#sharePlatformLabel');
+  const textInput = document.querySelector('#shareText');
+  const message = document.querySelector('#shareMessage');
+  if (!iconContainer || !modal) return;
 
-  const refCookie = getAmbassadorReferrer();
-  const attributionElement = document.querySelector('#attributionInfo');
-  if (attributionElement) {
-    attributionElement.textContent = refCookie
-      ? `Aktiv attribution: ${refCookie} (first click, 90 dager)`
-      : 'Ingen aktiv attribution funnet.';
-  }
+  iconContainer.addEventListener('click', (event) => {
+    const button = event.target.closest('.social-icon');
+    if (!button) return;
+    ambassadorState.selectedSharePlatform = button.dataset.platform;
+    if (platformLabel) platformLabel.textContent = `Plattform: ${ambassadorState.selectedSharePlatform}`;
+    modal.classList.add('open');
+  });
 
-  leadForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const formData = new FormData(leadForm);
-    const payload = {
-      name: String(formData.get('name') || ''),
-      company: String(formData.get('company') || ''),
-      email: String(formData.get('email') || '')
+  document.querySelector('#closeShareModal')?.addEventListener('click', () => modal.classList.remove('open'));
+  document.querySelector('#saveShareModal')?.addEventListener('click', () => {
+    const platform = ambassadorState.selectedSharePlatform;
+    if (!platform) return;
+    const text = encodeURIComponent(String(textInput?.value || 'Sjekk Animer!'));
+    const target = encodeURIComponent('https://animer.no/a/AMB123');
+    const map = {
+      LinkedIn: `https://www.linkedin.com/sharing/share-offsite/?url=${target}`,
+      Facebook: `https://www.facebook.com/sharer/sharer.php?u=${target}`,
+      X: `https://twitter.com/intent/tweet?text=${text}&url=${target}`
     };
+    const url = map[platform];
+    demoDb.socialShares.push({ platform, text: String(textInput?.value || ''), url, createdAt: new Date().toISOString() });
+    window.open(url, '_blank', 'noopener');
+    if (message) message.textContent = `Delingslenke opprettet for ${platform}.`;
+    if (textInput) textInput.value = '';
+    modal.classList.remove('open');
+  });
 
-    const result = await createLead(payload);
-    if (!result.created) {
-      leadMessage.textContent = result.reason;
-      leadMessage.style.color = 'var(--color-warning)';
-      return;
-    }
+  document.querySelector('#copyLink')?.addEventListener('click', async () => {
+    await navigator.clipboard.writeText('https://animer.no/a/AMB123');
+    if (message) message.textContent = 'Lenke kopiert.';
+  });
+}
 
-    leadMessage.textContent = `Lead lagret. ambassadorId=${result.lead.ambassadorId || 'null'} status=open`;
-    leadMessage.style.color = 'var(--color-success)';
-    leadForm.reset();
+function syncProfileUi() {
+  const avatar = document.querySelector('#profileAvatar');
+  const name = document.querySelector('#profileName');
+  const provider = document.querySelector('#profileProvider');
+  const fullName = document.querySelector('#profileFullName');
+  const email = document.querySelector('#profileEmail');
+  const phone = document.querySelector('#profilePhone');
+  const company = document.querySelector('#profileCompany');
+  const topAvatar = document.querySelector('#topbarAvatar');
+
+  if (topAvatar) topAvatar.src = demoDb.userProfile.avatarUrl;
+  if (avatar) avatar.src = demoDb.userProfile.avatarUrl;
+  if (name) name.textContent = demoDb.userProfile.fullName;
+  if (provider) provider.textContent = `Innlogget via ${demoDb.userProfile.provider}`;
+  if (fullName) fullName.value = demoDb.userProfile.fullName;
+  if (email) email.value = demoDb.userProfile.email;
+  if (phone) phone.value = demoDb.userProfile.phone;
+  if (company) company.value = demoDb.userProfile.company;
+}
+
+function initProfilePage() {
+  const form = document.querySelector('#profileForm');
+  if (!form) return;
+
+  syncProfileUi();
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    demoDb.userProfile.fullName = String(document.querySelector('#profileFullName')?.value || '');
+    demoDb.userProfile.email = String(document.querySelector('#profileEmail')?.value || '');
+    demoDb.userProfile.phone = String(document.querySelector('#profilePhone')?.value || '');
+    demoDb.userProfile.company = String(document.querySelector('#profileCompany')?.value || '');
+    document.querySelector('#profileMessage').textContent = 'Profil oppdatert.';
+    syncProfileUi();
+  });
+}
+
+function initInvoicePage() {
+  const form = document.querySelector('#invoiceForm');
+  const body = document.querySelector('#invoiceTableBody');
+  const empty = document.querySelector('#invoiceEmptyState');
+  const message = document.querySelector('#invoiceMessage');
+  if (!form || !body || !empty) return;
+
+  const render = () => {
+    body.innerHTML = demoDb.invoices.map((invoice) => `<tr><td>${invoice.number}</td><td>${currency(invoice.amount)}</td><td>${invoice.fileName}</td><td>${formatDate(invoice.createdAt)}</td></tr>`).join('');
+    empty.hidden = demoDb.invoices.length > 0;
+  };
+
+  render();
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const data = new FormData(form);
+    const file = data.get('invoiceFile');
+    demoDb.invoices.unshift({
+      number: String(data.get('invoiceNumber') || ''),
+      amount: Number(data.get('amount') || 0),
+      fileName: file?.name || 'uten filnavn',
+      createdAt: new Date().toISOString()
+    });
+    render();
+    message.textContent = 'Faktura lastet opp (lokalt i MVP).';
+    form.reset();
   });
 }
 
@@ -594,21 +625,18 @@ function subscribeToAmbassadorLeads() {
 
 trackReferralFromUrl();
 handleRedirectLoginResult();
+initTheme();
+initAuthAction();
 initNavbar();
 initLandingPage();
 initAdminPage();
 initAmbassadorTabs();
+initShareFlow();
 renderAmbassadorDashboard();
-subscribeToAmbassadorLeads();
+initProfilePage();
+initInvoicePage();
+syncProfileUi();
+initAmbassadorCharts();
 
-const loginGoogleBtn = document.querySelector('#loginGoogle');
-const registerGoogleBtn = document.querySelector('#registerGoogle');
-const loginFacebookBtn = document.querySelector('#loginFacebook');
-const registerFacebookBtn = document.querySelector('#registerFacebook');
-
-loginGoogleBtn?.addEventListener('click', window.loginWithGoogle);
-registerGoogleBtn?.addEventListener('click', window.loginWithGoogle);
-
-const facebookMessage = () => setAuthMessage('Facebook er ikke med i MVP. Bruk Google-login.');
-loginFacebookBtn?.addEventListener('click', facebookMessage);
-registerFacebookBtn?.addEventListener('click', facebookMessage);
+document.querySelector('#loginGoogle')?.addEventListener('click', window.loginWithGoogle);
+document.querySelector('#loginFacebook')?.addEventListener('click', loginWithFacebookDemo);
