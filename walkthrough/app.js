@@ -1,8 +1,8 @@
 import { AMBASSADOR_STATUSES, LEAD_STATUSES, calculateAmbassadorTotals, currency, demoDb, formatDate } from './data-store.js';
 import { initAmbassadorCharts, refreshAmbassadorCharts } from './charts/index.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js';
-import { getAuth, getRedirectResult, GoogleAuthProvider, signInWithPopup, signInWithRedirect } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js';
-import { doc, getDoc, getFirestore, serverTimestamp, setDoc } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js';
+import { getAuth, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signInWithRedirect } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js';
+import { collection, doc, getDoc, getFirestore, onSnapshot, query, serverTimestamp, setDoc, where } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyBERElRl3D5EHzKme6to5w2nTZFAFb8ySQ',
@@ -17,6 +17,25 @@ const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
 const authMessage = document.querySelector('#authMessage');
+const REFERRAL_STORAGE_KEY = 'animer_referral';
+const REFERRAL_COOKIE_KEY = 'ref';
+const ATTRIBUTION_WINDOW_DAYS = 90;
+const DEFAULT_COMMISSION_RATE = 0.1;
+
+const TRANSLATIONS = {
+  nb: {
+    authIn: 'Logg inn',
+    authOut: 'Logg ut',
+    google: 'Fortsett med Google',
+    fb: 'Fortsett med Facebook'
+  },
+  en: {
+    authIn: 'Log in',
+    authOut: 'Log out',
+    google: 'Continue with Google',
+    fb: 'Continue with Facebook'
+  }
+};
 
 const adminState = { leadStatusFilter: 'all', ambassadorFilter: 'all', pendingStatusLeadId: null };
 const ambassadorState = { leadFilter: 'all', selectedSharePlatform: null };
@@ -53,19 +72,76 @@ function initTheme() {
   });
 }
 
+function getCurrentLang() {
+  const fromQuery = new URLSearchParams(window.location.search).get('lang');
+  if (fromQuery === 'en' || fromQuery === 'nb') return fromQuery;
+  const stored = localStorage.getItem('lang');
+  return stored === 'en' ? 'en' : 'nb';
+}
+
+function setLang(lang) {
+  localStorage.setItem('lang', lang);
+  document.documentElement.lang = lang;
+  const t = TRANSLATIONS[lang];
+  const google = document.querySelector('#loginGoogle');
+  const facebook = document.querySelector('#loginFacebook');
+  const authAction = document.querySelector('#authAction');
+  const languageToggle = document.querySelector('#languageToggle');
+
+  if (google) google.textContent = t.google;
+  if (facebook) facebook.textContent = t.fb;
+  if (authAction) {
+    const loggedIn = localStorage.getItem('isLoggedIn') === 'true';
+    authAction.textContent = loggedIn ? t.authOut : t.authIn;
+  }
+  if (languageToggle) languageToggle.textContent = lang === 'en' ? '🇳🇴' : '🇬🇧';
+}
+
+function initLanguageToggle() {
+  const languageToggle = document.querySelector('#languageToggle');
+  if (!languageToggle) return;
+  setLang(getCurrentLang());
+  languageToggle.addEventListener('click', () => {
+    const next = getCurrentLang() === 'nb' ? 'en' : 'nb';
+    setLang(next);
+  });
+}
+
+function hideProtectedNavigation(isLoggedIn) {
+  document.querySelectorAll('.auth-only').forEach((element) => {
+    element.hidden = !isLoggedIn;
+  });
+}
+
+function enforcePageAccess(isLoggedIn) {
+  const path = window.location.pathname;
+  const isAdminPage = path.includes('/admin.html');
+  if (!isAdminPage || isLoggedIn) return;
+  window.location.replace('index.html?blocked=admin');
+}
+
 function initAuthAction() {
   const authAction = document.querySelector('#authAction');
   const avatar = document.querySelector('#topbarAvatar');
-  const isLoggedIn = localStorage.getItem('isLoggedIn') !== 'false';
+  const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+  const lang = getCurrentLang();
+  const t = TRANSLATIONS[lang];
 
   if (avatar) avatar.src = demoDb.userProfile.avatarUrl;
-  if (authAction) authAction.textContent = isLoggedIn ? 'Logg ut' : 'Logg inn';
+  if (authAction) authAction.textContent = isLoggedIn ? t.authOut : t.authIn;
+  hideProtectedNavigation(isLoggedIn);
+  enforcePageAccess(isLoggedIn);
 
   authAction?.addEventListener('click', () => {
-    const next = authAction.textContent === 'Logg ut' ? 'Logg inn' : 'Logg ut';
-    authAction.textContent = next;
-    localStorage.setItem('isLoggedIn', String(next === 'Logg ut'));
-    setAuthMessage(next === 'Logg ut' ? 'Du er logget inn.' : 'Du er logget ut.');
+    const currentlyLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+    const nextLoggedIn = !currentlyLoggedIn;
+    localStorage.setItem('isLoggedIn', String(nextLoggedIn));
+    authAction.textContent = nextLoggedIn ? t.authOut : t.authIn;
+    hideProtectedNavigation(nextLoggedIn);
+    setAuthMessage(nextLoggedIn ? 'Du er logget inn.' : 'Du er logget ut.');
+    if (!nextLoggedIn && window.location.pathname.includes('/admin.html')) {
+      window.location.replace('index.html');
+    }
   });
 }
 
@@ -174,8 +250,10 @@ window.loginWithGoogle = async () => {
     demoDb.userProfile.provider = 'Google';
     demoDb.userProfile.avatarUrl = result.user.photoURL || demoDb.userProfile.avatarUrl;
     localStorage.setItem('isLoggedIn', 'true');
+    hideProtectedNavigation(true);
     setAuthMessage(`Innlogget som ${result.user.email}.`);
     syncProfileUi();
+    setLang(getCurrentLang());
   } catch (error) {
     if (error?.code === 'auth/popup-blocked') {
       await signInWithRedirect(auth, provider);
@@ -189,8 +267,10 @@ function loginWithFacebookDemo() {
   demoDb.userProfile.provider = 'Facebook';
   demoDb.userProfile.avatarUrl = 'https://i.pravatar.cc/120?img=32';
   localStorage.setItem('isLoggedIn', 'true');
+  hideProtectedNavigation(true);
   setAuthMessage('Facebook demo-login aktivert for MVP.');
   syncProfileUi();
+  setLang(getCurrentLang());
 }
 
 function createLead({ name, company, email }) {
@@ -219,6 +299,10 @@ function initLandingPage() {
   const registerMessage = document.querySelector('#registerMessage');
   if (!leadForm) return;
 
+  if (new URLSearchParams(window.location.search).get('blocked') === 'admin') {
+    setAuthMessage('Logg inn for å få tilgang til admin-sider.');
+  }
+
   leadForm.addEventListener('submit', (event) => {
     event.preventDefault();
     const formData = new FormData(leadForm);
@@ -236,15 +320,6 @@ function initLandingPage() {
     demoDb.userProfile.provider = 'E-post';
     registerMessage.textContent = 'Konto registrert lokalt i MVP.';
     syncProfileUi();
-  });
-}
-
-function getFilteredLeads() {
-  return demoDb.leads.filter((lead) => {
-    const statusOk = adminState.leadStatusFilter === 'all' || lead.status === adminState.leadStatusFilter;
-    const ambassador = lead.ambassadorId || 'Ingen';
-    const ambassadorOk = adminState.ambassadorFilter === 'all' || ambassador === adminState.ambassadorFilter;
-    return statusOk && ambassadorOk;
   });
 }
 
@@ -421,39 +496,20 @@ function initAdminPage() {
     renderAdmin();
   });
 
-  document.querySelector('#closeStatusModal')?.addEventListener('click', () => modalBackdrop?.classList.remove('open'));
+  document.querySelector('#closeStatusModal')?.addEventListener('click', closeStatusModal);
   document.querySelector('#saveStatusModal')?.addEventListener('click', () => {
     if (!modalSelect || !adminState.pendingStatusLeadId) return;
     const lead = demoDb.leads.find((item) => item.id === adminState.pendingStatusLeadId);
     if (!lead) return;
     lead.status = modalSelect.value;
-    if (lead.status !== 'Won') {
-      lead.dealValue = 0;
-      lead.commissionAmount = 0;
-    }
-    modalBackdrop?.classList.remove('open');
-    renderAdmin();
-  });
-
-  closeModalButton?.addEventListener('click', closeStatusModal);
-  modalBackdrop?.addEventListener('click', (event) => {
-    if (event.target === modalBackdrop) closeStatusModal();
-  });
-
-  saveModalButton?.addEventListener('click', () => {
-    if (!adminState.pendingStatusLeadId || !modalSelect) return;
-    const lead = demoDb.leads.find((item) => item.id === adminState.pendingStatusLeadId);
-    lead.status = modalSelect.value;
     recalculateLeadCommission(lead);
     closeStatusModal();
     renderAdmin();
   });
-}
 
-function getAmbassadorLeads(ambassadorId) {
-  const leads = demoDb.leads.filter((lead) => lead.ambassadorId === ambassadorId);
-  if (ambassadorState.leadFilter === 'all') return leads;
-  return leads.filter((lead) => lead.status === ambassadorState.leadFilter);
+  modalBackdrop?.addEventListener('click', (event) => {
+    if (event.target === modalBackdrop) closeStatusModal();
+  });
 }
 
 function getAmbassadorLeads(ambassadorId) {
@@ -627,6 +683,7 @@ trackReferralFromUrl();
 handleRedirectLoginResult();
 initTheme();
 initAuthAction();
+initLanguageToggle();
 initNavbar();
 initLandingPage();
 initAdminPage();
@@ -637,6 +694,7 @@ initProfilePage();
 initInvoicePage();
 syncProfileUi();
 initAmbassadorCharts();
+subscribeToAmbassadorLeads();
 
 document.querySelector('#loginGoogle')?.addEventListener('click', window.loginWithGoogle);
 document.querySelector('#loginFacebook')?.addEventListener('click', loginWithFacebookDemo);
