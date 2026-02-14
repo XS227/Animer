@@ -1,74 +1,35 @@
 import { analyticsSeries } from '../data-store.js';
+import { getChartTheme } from './theme.js';
 
 function renderFallback(canvas, reason) {
   const wrap = canvas.closest('.chart-wrap');
   if (!wrap) return;
 
   const totalRevenue = analyticsSeries.reduce((sum, item) => sum + item.revenue, 0);
-  const bestMonth = analyticsSeries.reduce((best, item) => (item.revenue > best.revenue ? item : best), analyticsSeries[0]);
-  wrap.innerHTML = `
-    <div class="chart-fallback">
-      <p class="badge info">Diagram utilgjengelig</p>
-      <p class="muted">${reason}</p>
-      <p><strong>Totalt siste 6 måneder:</strong> ${new Intl.NumberFormat('nb-NO').format(totalRevenue)} kr</p>
-      <p><strong>Beste måned:</strong> ${bestMonth.month} (${new Intl.NumberFormat('nb-NO').format(bestMonth.revenue)} kr)</p>
-    </div>
-  `;
+  wrap.innerHTML = `<div class="chart-fallback"><p>${reason}</p><p>Totalt: ${new Intl.NumberFormat('nb-NO').format(totalRevenue)} kr</p></div>`;
 }
 
 export function initIncomeChart() {
   const canvas = document.querySelector('#incomeChart');
   if (!canvas) return;
+  if (!window.Chart) return renderFallback(canvas, 'Chart.js utilgjengelig');
+  if (!analyticsSeries.length) return renderFallback(canvas, 'Ingen datagrunnlag funnet.');
 
-  if (!window.Chart) {
-    renderFallback(canvas, 'Chart.js ble ikke lastet. Viser nøkkeltall i stedet.');
-    return;
-  }
-
-  if (!analyticsSeries.length) {
-    renderFallback(canvas, 'Ingen datagrunnlag funnet.');
-    return;
-  }
-
-  const months = analyticsSeries.map((d) => d.month);
-  const revenues = analyticsSeries.map((d) => d.revenue);
+  const theme = getChartTheme();
 
   return new Chart(canvas, {
     type: 'line',
     data: {
-      labels: months,
-      datasets: [
-        {
-          label: 'Inntekt',
-          data: revenues,
-          borderColor: '#2956f2',
-          backgroundColor: 'rgba(41, 86, 242, 0.16)',
-          fill: true,
-          tension: 0.35,
-          pointRadius: 4
-        }
-      ]
+      labels: analyticsSeries.map((d) => d.month),
+      datasets: [{ label: 'Inntekt', data: analyticsSeries.map((d) => d.revenue), borderColor: theme.primary, backgroundColor: `${theme.primary}33`, fill: true, tension: 0.35, pointRadius: 3 }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          labels: {
-            color: '#eaf2ff'
-          }
-        }
-      },
+      plugins: { legend: { labels: { color: theme.text } } },
       scales: {
-        x: {
-          ticks: { color: '#d0def8' },
-          grid: { color: 'rgba(208, 222, 248, 0.18)' }
-        },
-        y: {
-          beginAtZero: true,
-          ticks: { color: '#d0def8' },
-          grid: { color: 'rgba(208, 222, 248, 0.18)' }
-        }
+        x: { ticks: { color: theme.muted }, grid: { color: theme.border } },
+        y: { ticks: { color: theme.muted }, grid: { color: theme.border }, beginAtZero: true }
       }
     }
   });

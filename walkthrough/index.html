@@ -9,55 +9,58 @@
   <body>
     <div class="app-layout">
       <aside class="sidebar">
-        <div class="brand">ANIMER</div>
+        <div class="brand">Animer</div>
         <nav class="main-nav">
-          <a href="index.html" class="active">Landing + Tracking</a>
-          <a href="ambassador.html">Ambassadør</a>
-          <a href="admin.html">Superadmin</a>
-          <a href="payout-support.html">Støtte</a>
+          <a href="index.html" class="active">Login / Onboarding</a>
+          <a href="ambassador.html">Ambassadørdashboard</a>
+          <a href="admin.html">Admin-panel</a>
+          <a href="profile.html">Min profil</a>
+          <a href="payout-support.html">Utbetalinger</a>
         </nav>
       </aside>
       <div class="content">
         <header class="topbar">
           <div class="topbar-left">
-            <button id="navToggle" class="nav-toggle" aria-expanded="false" aria-label="Åpne meny">☰</button>
-            <h1>Animer MVP – attribution først</h1>
+            <button id="navToggle" class="nav-toggle btn-secondary" aria-expanded="false">☰</button>
+            <h1>Logg inn</h1>
           </div>
-          <span class="role-pill">Google login + lead attribution</span>
+          <div class="topbar-actions">
+            <button id="themeToggle" class="btn-icon btn-secondary" title="Bytt mørk/lys">🌙</button>
+            <button id="authAction" class="btn-secondary">Logg ut</button>
+            <img id="topbarAvatar" class="avatar" src="" alt="Profil" />
+          </div>
         </header>
 
         <main class="page">
-          <section class="card">
-            <h2>1) Ambassadør onboarding</h2>
-            <p>Google login oppretter ambassadør i Firestore med status <strong>pending</strong> for manuell godkjenning.</p>
-            <div class="social-buttons">
-              <button id="loginGoogle" class="social-auth-btn google-btn" type="button">Fortsett med Google</button>
-              <button id="loginFacebook" class="social-auth-btn facebook-btn" type="button">Facebook (ikke i MVP)</button>
+          <section class="panel">
+            <h2>Firebase Auth</h2>
+            <p class="muted">Google/Facebook-knapper, samt enkel konto-registrering.</p>
+            <div class="row-actions" style="justify-content:flex-start;">
+              <button id="loginGoogle" class="btn-primary">Fortsett med Google</button>
+              <button id="loginFacebook" class="btn-secondary">Fortsett med Facebook</button>
             </div>
             <p id="authMessage" class="muted" aria-live="polite"></p>
           </section>
 
-          <section class="card">
-            <h2>2) Tracking</h2>
-            <p>Test referral-klikk via <code>?ref=AMB123</code>. Systemet lagrer klikk og setter cookie i 90 dager.</p>
-            <p id="attributionInfo" class="muted"></p>
-            <p class="muted">Eksempel: <a href="index.html?ref=AMB123&target=index.html">index.html?ref=AMB123</a></p>
+          <section class="panel">
+            <h2>Opprett konto</h2>
+            <form id="registerForm" class="form-grid">
+              <label>Fullt navn<input name="fullName" required /></label>
+              <label>E-post<input name="email" type="email" required /></label>
+              <label>Telefon<input name="phone" /></label>
+              <button class="btn-primary" type="submit">Registrer konto</button>
+              <p id="registerMessage" class="muted" aria-live="polite"></p>
+            </form>
           </section>
 
-          <section class="card">
-            <h2>3) Lead capture (viktigst)</h2>
+          <section class="panel">
+            <h2>Lead capture</h2>
             <form id="leadForm" class="form-grid">
-              <label>Navn
-                <input name="name" required />
-              </label>
-              <label>Firma
-                <input name="company" required />
-              </label>
-              <label>E-post
-                <input name="email" type="email" required />
-              </label>
+              <label>Navn<input name="name" required /></label>
+              <label>Firma<input name="company" required /></label>
+              <label>E-post<input name="email" type="email" required /></label>
               <button class="btn-primary" type="submit">Lagre lead</button>
-              <p id="leadMessage" class="muted" aria-live="polite"></p>
+              <p id="leadMessage" class="muted"></p>
             </form>
           </section>
         </main>

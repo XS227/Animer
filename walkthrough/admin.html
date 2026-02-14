@@ -3,53 +3,65 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Superadmin MVP</title>
+    <title>Admin-panel</title>
     <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
   <body>
     <div class="app-layout">
       <aside class="sidebar">
-        <div class="brand">ANIMER</div>
+        <div class="brand">Animer</div>
         <nav class="main-nav">
-          <a href="index.html">Landing + Tracking</a>
-          <a href="ambassador.html">Ambassadør</a>
-          <a href="admin.html" class="active">Superadmin</a>
-          <a href="payout-support.html">Støtte</a>
+          <a href="index.html">Login / Onboarding</a>
+          <a href="ambassador.html">Ambassadørdashboard</a>
+          <a href="admin.html" class="active">Admin-panel</a>
+          <a href="profile.html">Min profil</a>
+          <a href="payout-support.html">Utbetalinger</a>
         </nav>
       </aside>
       <div class="content">
         <header class="topbar">
           <div class="topbar-left">
-            <button id="navToggle" class="nav-toggle" aria-expanded="false" aria-label="Åpne meny">☰</button>
-            <h1>Superadmin (MVP)</h1>
+            <button id="navToggle" class="nav-toggle btn-secondary" aria-expanded="false">☰</button>
+            <h1>Admin-panel</h1>
           </div>
-          <span class="role-pill">Leads, ambassadører, utbetaling</span>
+          <div class="topbar-actions">
+            <button id="themeToggle" class="btn-icon btn-secondary" title="Bytt mørk/lys">🌙</button>
+            <button id="authAction" class="btn-secondary">Logg ut</button>
+            <img id="topbarAvatar" class="avatar" src="" alt="Profil" />
+          </div>
         </header>
 
         <main class="page">
-          <section class="card">
-            <h2>A) Leads</h2>
+          <section class="panel">
+            <div class="section-header">
+              <h2>Leads</h2>
+              <div class="filters">
+                <select id="leadStatusFilter"><option value="all">Status</option></select>
+                <select id="leadAmbassadorFilter"><option value="all">Ambassadør</option></select>
+              </div>
+            </div>
+            <div id="leadEmptyState" class="empty-state" hidden>Ingen leads matcher filter.</div>
             <div class="table-wrap">
               <table class="table">
-                <thead><tr><th>Firma</th><th>Ambassadør</th><th>Status</th><th>Verdi</th><th>Provisjon</th></tr></thead>
+                <thead><tr><th>Firma</th><th>Kontakt</th><th>Ambassadør</th><th>Status</th><th>Verdi</th><th>Provisjon</th><th>Handling</th></tr></thead>
                 <tbody id="adminLeadBody"></tbody>
               </table>
             </div>
-            <p class="muted">Når status settes til <strong>Won</strong>, kan du legge inn verdi og provisjon beregnes med 10%.</p>
           </section>
 
-          <section class="card">
-            <h2>B) Ambassadører</h2>
+          <section class="panel">
+            <h2>Ambassadører + provisjon</h2>
             <div class="table-wrap">
               <table class="table">
-                <thead><tr><th>Navn</th><th>Status</th><th>Leads</th><th>Omsetning</th><th>Provisjon</th></tr></thead>
+                <thead><tr><th>Navn</th><th>Status</th><th>Leads</th><th>Omsetning</th><th>Sats</th><th>Provisjon</th><th>Handling</th></tr></thead>
                 <tbody id="adminAmbassadorBody"></tbody>
               </table>
             </div>
           </section>
 
-          <section class="card">
-            <h2>C) Utbetaling</h2>
+          <section class="panel">
+            <h2>Utbetalinger</h2>
             <div class="table-wrap">
               <table class="table">
                 <thead><tr><th>Ambassadør</th><th>Opptjent</th><th>Utbetalt</th><th>Tilgjengelig</th><th>Handling</th></tr></thead>
@@ -59,6 +71,17 @@
           </section>
         </main>
         <footer class="site-footer">© Levert av Setai.no</footer>
+      </div>
+    </div>
+
+    <div id="statusModalBackdrop" class="modal-backdrop">
+      <div class="modal">
+        <h2>Oppdater leadstatus</h2>
+        <label>Ny status<select id="statusModalSelect"></select></label>
+        <div class="row-actions">
+          <button id="closeStatusModal" class="btn-secondary">Avbryt</button>
+          <button id="saveStatusModal" class="btn-primary">Lagre</button>
+        </div>
       </div>
     </div>
 

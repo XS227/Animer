@@ -3,68 +3,102 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Ambassadørdashboard MVP</title>
+    <title>Ambassadørdashboard</title>
     <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
   <body>
     <div class="app-layout">
       <aside class="sidebar">
-        <div class="brand">ANIMER</div>
+        <div class="brand">Animer</div>
         <nav class="main-nav">
-          <a href="index.html">Landing + Tracking</a>
-          <a href="ambassador.html" class="active">Ambassadør</a>
-          <a href="admin.html">Superadmin</a>
-          <a href="payout-support.html">Støtte</a>
+          <a href="index.html">Login / Onboarding</a>
+          <a href="ambassador.html" class="active">Ambassadørdashboard</a>
+          <a href="admin.html">Admin-panel</a>
+          <a href="profile.html">Min profil</a>
+          <a href="payout-support.html">Utbetalinger</a>
         </nav>
       </aside>
       <div class="content">
         <header class="topbar">
           <div class="topbar-left">
-            <button id="navToggle" class="nav-toggle" aria-expanded="false" aria-label="Åpne meny">☰</button>
-            <h1>Ambassadørdashboard (MVP)</h1>
+            <button id="navToggle" class="nav-toggle btn-secondary" aria-expanded="false">☰</button>
+            <h1>Ambassadør-dashboard</h1>
           </div>
-          <span class="role-pill">Kun KPI-er som trengs</span>
+          <div class="topbar-actions">
+            <button id="themeToggle" class="btn-icon btn-secondary" title="Bytt mørk/lys">🌙</button>
+            <button id="authAction" class="btn-secondary">Logg ut</button>
+            <img id="topbarAvatar" class="avatar" src="" alt="Profil" />
+          </div>
         </header>
 
         <main class="page">
-          <section class="grid">
-            <article class="card">
-              <h3>Antall leads</h3>
-              <p id="metricLeads" class="kpi">0</p>
-            </article>
-            <article class="card">
-              <h3>Antall vunnet</h3>
-              <p id="metricWon" class="kpi">0</p>
-            </article>
-            <article class="card">
-              <h3>Total provisjon</h3>
-              <p id="metricCommission" class="kpi">0 kr</p>
-            </article>
-            <article class="card">
-              <h3>Tilgjengelig for utbetaling</h3>
-              <p id="metricAvailable" class="kpi">0 kr</p>
-            </article>
+          <section class="panel">
+            <h2>Velkommen, <span id="welcomeName">Magnus</span>!</h2>
+            <div class="grid">
+              <article class="kpi-card"><p class="muted">Leads</p><p id="metricLeads" class="kpi">0</p></article>
+              <article class="kpi-card"><p class="muted">Godkjente salg</p><p id="metricWon" class="kpi">0</p></article>
+              <article class="kpi-card"><p class="muted">Provisjon opptjent</p><p id="metricCommission" class="kpi">0 kr</p></article>
+              <article class="kpi-card"><p class="muted">Til utbetaling</p><p id="metricAvailable" class="kpi">0 kr</p></article>
+            </div>
           </section>
 
-          <section class="card">
-            <h2>Dine leads</h2>
+          <section class="panel">
+            <div class="section-header">
+              <h2>Mine leads</h2>
+              <div class="tab-row" id="ambassadorLeadTabs">
+                <button class="tab-btn active" data-filter="all">Alle</button>
+                <button class="tab-btn" data-filter="Won">Vunnet</button>
+                <button class="tab-btn" data-filter="Open">Åpen</button>
+              </div>
+            </div>
+            <div id="ambassadorEmptyState" class="empty-state" hidden>Ingen leads enda.</div>
             <div class="table-wrap">
               <table class="table">
-                <thead>
-                  <tr><th>Firma</th><th>Status</th><th>Verdi</th><th>Provisjon</th></tr>
-                </thead>
+                <thead><tr><th>Firma</th><th>Kontakt</th><th>Status</th><th>Verdi</th><th>Provisjon</th></tr></thead>
                 <tbody id="leadList"></tbody>
               </table>
             </div>
           </section>
 
-          <section class="card">
-            <h2>Del lenke</h2>
-            <p>Unik lenke: <code>animer.no/a/AMB123</code></p>
-            <button id="copyLink" class="btn-primary">Kopier lenke</button>
+          <section class="panel">
+            <div class="section-header">
+              <h2>Del på sosiale medier</h2>
+              <button id="copyLink" class="btn-primary">Kopier lenke</button>
+            </div>
+            <p class="muted">Velg kanal, skriv kort tekst og opprett delingslenke automatisk.</p>
+            <div class="social-icons">
+              <button class="social-icon" data-platform="LinkedIn">in</button>
+              <button class="social-icon" data-platform="Facebook">f</button>
+              <button class="social-icon" data-platform="X">𝕏</button>
+            </div>
+            <p id="shareMessage" class="muted"></p>
+          </section>
+
+          <section class="panel">
+            <h2>Resultatgrafer</h2>
+            <div class="chart-grid">
+              <article class="chart-card"><h3>Inntekt</h3><div class="chart-wrap"><canvas id="incomeChart"></canvas></div></article>
+              <article class="chart-card"><h3>Tilbud sendt</h3><div class="chart-wrap"><canvas id="offerChart"></canvas></div></article>
+              <article class="chart-card"><h3>Kanalmiks</h3><div class="chart-wrap"><canvas id="channelChart"></canvas></div></article>
+            </div>
           </section>
         </main>
         <footer class="site-footer">© Levert av Setai.no</footer>
+      </div>
+    </div>
+
+    <div id="shareModalBackdrop" class="modal-backdrop">
+      <div class="modal">
+        <h2>Del innlegg</h2>
+        <p id="sharePlatformLabel" class="muted">Plattform</p>
+        <label>Tekst
+          <textarea id="shareText" rows="4" placeholder="Kort tekst som blir med i delingslenken"></textarea>
+        </label>
+        <div class="row-actions">
+          <button id="closeShareModal" class="btn-secondary">Avbryt</button>
+          <button id="saveShareModal" class="btn-primary">Opprett delingslenke</button>
+        </div>
       </div>
     </div>
 
