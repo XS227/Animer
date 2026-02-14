@@ -11,9 +11,9 @@
       <aside class="sidebar">
         <div class="brand">ANIMER</div>
         <nav class="main-nav">
-          <a href="index.html">Landing + Tracking</a>
-          <a href="ambassador.html" class="active">Ambassadør</a>
-          <a href="admin.html">Superadmin</a>
+          <a href="index.html">Login / Onboarding</a>
+          <a href="ambassador.html" class="active">Ambassadørdashboard</a>
+          <a href="admin.html">Adminpanel</a>
           <a href="payout-support.html">Støtte</a>
         </nav>
       </aside>
@@ -21,19 +21,25 @@
         <header class="topbar">
           <div class="topbar-left">
             <button id="navToggle" class="nav-toggle" aria-expanded="false" aria-label="Åpne meny">☰</button>
-            <h1>Ambassadørdashboard (MVP)</h1>
+            <h1>Ambassadørdashboard</h1>
           </div>
-          <span class="role-pill">Kun KPI-er som trengs</span>
+          <span class="role-pill">Leads · Omsetning · Provisjon</span>
         </header>
 
         <main class="page">
+          <nav class="breadcrumbs" aria-label="Brødsmuler">
+            <span>Home</span>
+            <span>/</span>
+            <span class="current">Ambassadørdashboard</span>
+          </nav>
+
           <section class="grid">
             <article class="card">
               <h3>Antall leads</h3>
               <p id="metricLeads" class="kpi">0</p>
             </article>
             <article class="card">
-              <h3>Antall vunnet</h3>
+              <h3>Vunnet</h3>
               <p id="metricWon" class="kpi">0</p>
             </article>
             <article class="card">
@@ -41,13 +47,25 @@
               <p id="metricCommission" class="kpi">0 kr</p>
             </article>
             <article class="card">
-              <h3>Tilgjengelig for utbetaling</h3>
+              <h3>Tilgjengelig</h3>
               <p id="metricAvailable" class="kpi">0 kr</p>
             </article>
           </section>
 
           <section class="card">
-            <h2>Dine leads</h2>
+            <div class="section-header">
+              <h2>Dine leads</h2>
+              <div class="tab-row" id="ambassadorLeadTabs">
+                <button class="tab-btn active" data-filter="all" type="button">Alle</button>
+                <button class="tab-btn" data-filter="Won" type="button">Won</button>
+                <button class="tab-btn" data-filter="Open" type="button">Open</button>
+              </div>
+            </div>
+
+            <div id="ambassadorEmptyState" class="empty-state" hidden>
+              Ingen leads enda. Del lenken din for å få første lead.
+            </div>
+
             <div class="table-wrap">
               <table class="table">
                 <thead>
@@ -60,8 +78,10 @@
 
           <section class="card">
             <h2>Del lenke</h2>
-            <p>Unik lenke: <code>animer.no/a/AMB123</code></p>
-            <button id="copyLink" class="btn-primary">Kopier lenke</button>
+            <p class="muted">Unik lenke: <code>animer.no/a/AMB123</code></p>
+            <div class="row-actions" style="justify-content:flex-start;">
+              <button id="copyLink" class="btn-primary">Kopier lenke</button>
+            </div>
           </section>
         </main>
         <footer class="site-footer">© Levert av Setai.no</footer>
