@@ -11,9 +11,9 @@
       <aside class="sidebar">
         <div class="brand">ANIMER</div>
         <nav class="main-nav">
-          <a href="index.html">Landing + Tracking</a>
-          <a href="ambassador.html">Ambassadør</a>
-          <a href="admin.html" class="active">Superadmin</a>
+          <a href="index.html">Login / Onboarding</a>
+          <a href="ambassador.html">Ambassadørdashboard</a>
+          <a href="admin.html" class="active">Adminpanel</a>
           <a href="payout-support.html">Støtte</a>
         </nav>
       </aside>
@@ -21,35 +21,67 @@
         <header class="topbar">
           <div class="topbar-left">
             <button id="navToggle" class="nav-toggle" aria-expanded="false" aria-label="Åpne meny">☰</button>
-            <h1>Superadmin (MVP)</h1>
+            <h1>Adminpanel</h1>
           </div>
-          <span class="role-pill">Leads, ambassadører, utbetaling</span>
+          <span class="role-pill">Leads · Ambassadører · Utbetalinger</span>
         </header>
 
         <main class="page">
+          <nav class="breadcrumbs" aria-label="Brødsmuler">
+            <span>Home</span>
+            <span>/</span>
+            <span class="current">Adminpanel</span>
+          </nav>
+
           <section class="card">
-            <h2>A) Leads</h2>
+            <div class="section-header">
+              <h2>A) Leads</h2>
+              <div class="filters">
+                <label>Status
+                  <select id="leadStatusFilter">
+                    <option value="all">Alle</option>
+                    <option value="Open">Open</option>
+                    <option value="Contacted">Contacted</option>
+                    <option value="Meeting">Meeting</option>
+                    <option value="Offered">Offered</option>
+                    <option value="Won">Won</option>
+                    <option value="Lost">Lost</option>
+                  </select>
+                </label>
+                <label>Ambassadør
+                  <select id="leadAmbassadorFilter">
+                    <option value="all">Alle</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div id="leadEmptyState" class="empty-state" hidden>
+              Ingen leads matcher filtrene dine.
+            </div>
             <div class="table-wrap">
               <table class="table">
-                <thead><tr><th>Firma</th><th>Ambassadør</th><th>Status</th><th>Verdi</th><th>Provisjon</th></tr></thead>
+                <thead><tr><th>Firma</th><th>Ambassadør</th><th>Status</th><th>Verdi</th><th>Provisjon</th><th>Handling</th></tr></thead>
                 <tbody id="adminLeadBody"></tbody>
               </table>
             </div>
-            <p class="muted">Når status settes til <strong>Won</strong>, kan du legge inn verdi og provisjon beregnes med 10%.</p>
+            <p class="muted">Når status settes til <strong>Won</strong>, aktiveres felt for deal value med provisjon på 10%.</p>
           </section>
 
           <section class="card">
-            <h2>B) Ambassadører</h2>
+            <div class="section-header">
+              <h2>B) Ambassadører</h2>
+              <button class="tooltip" data-tooltip="Godkjenn pending-profiler i denne tabellen">ⓘ</button>
+            </div>
             <div class="table-wrap">
               <table class="table">
-                <thead><tr><th>Navn</th><th>Status</th><th>Leads</th><th>Omsetning</th><th>Provisjon</th></tr></thead>
+                <thead><tr><th>Navn</th><th>Status</th><th>Leads</th><th>Omsetning</th><th>Provisjon</th><th>Godkjenning</th></tr></thead>
                 <tbody id="adminAmbassadorBody"></tbody>
               </table>
             </div>
           </section>
 
           <section class="card">
-            <h2>C) Utbetaling</h2>
+            <h2>C) Utbetalinger</h2>
             <div class="table-wrap">
               <table class="table">
                 <thead><tr><th>Ambassadør</th><th>Opptjent</th><th>Utbetalt</th><th>Tilgjengelig</th><th>Handling</th></tr></thead>
@@ -59,6 +91,20 @@
           </section>
         </main>
         <footer class="site-footer">© Levert av Setai.no</footer>
+      </div>
+    </div>
+
+    <div id="statusModalBackdrop" class="modal-backdrop" role="presentation">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="statusModalTitle">
+        <h2 id="statusModalTitle">Oppdater leadstatus</h2>
+        <p class="muted" id="statusModalMessage">Bekreft oppdatering av status for lead.</p>
+        <label>Ny status
+          <select id="statusModalSelect"></select>
+        </label>
+        <div class="row-actions">
+          <button type="button" id="closeStatusModal" class="btn-secondary">Avbryt</button>
+          <button type="button" id="saveStatusModal" class="btn-primary">Lagre</button>
+        </div>
       </div>
     </div>
 

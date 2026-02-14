@@ -24,6 +24,16 @@ const db = getFirestore(firebaseApp);
 const authMessage = document.querySelector('#authMessage');
 const DEFAULT_COMMISSION_RATE = 0.1;
 
+const adminState = {
+  leadStatusFilter: 'all',
+  ambassadorFilter: 'all',
+  pendingStatusLeadId: null
+};
+
+const ambassadorState = {
+  leadFilter: 'all'
+};
+
 function setAuthMessage(message) {
   if (authMessage) authMessage.textContent = message;
 }
@@ -174,33 +184,49 @@ function createLead({ name, company, email }) {
   };
 }
 
+function getFilteredLeads() {
+  return demoDb.leads.filter((lead) => {
+    const statusOk = adminState.leadStatusFilter === 'all' || lead.status === adminState.leadStatusFilter;
+    const ambassador = lead.ambassadorId || 'Ingen';
+    const ambassadorOk = adminState.ambassadorFilter === 'all' || ambassador === adminState.ambassadorFilter;
+    return statusOk && ambassadorOk;
+  });
+}
+
 function renderAdmin() {
   const leadBody = document.querySelector('#adminLeadBody');
   const ambassadorBody = document.querySelector('#adminAmbassadorBody');
   const payoutBody = document.querySelector('#adminPayoutBody');
+  const leadEmptyState = document.querySelector('#leadEmptyState');
   if (!leadBody || !ambassadorBody || !payoutBody) return;
 
-  leadBody.innerHTML = demoDb.leads
+  const filteredLeads = getFilteredLeads();
+
+  leadBody.innerHTML = filteredLeads
     .map((lead) => {
       const ambassadorLabel = lead.ambassadorId || 'Ingen';
       return `
         <tr>
           <td>${lead.company}</td>
           <td>${ambassadorLabel}</td>
-          <td>
-            <select class="admin-status" data-id="${lead.id}">
-              ${LEAD_STATUSES.map((status) => `<option value="${status}" ${status === lead.status ? 'selected' : ''}>${status}</option>`).join('')}
-            </select>
-          </td>
+          <td><span class="badge info">${lead.status}</span></td>
           <td><input type="number" class="deal-input" data-id="${lead.id}" min="0" value="${lead.dealValue || 0}" ${lead.status === 'Won' ? '' : 'disabled'} /></td>
           <td>${currency(lead.commissionAmount || 0)}</td>
+          <td><button class="btn-secondary open-status-modal" data-id="${lead.id}" type="button">Endre status</button></td>
         </tr>`;
     })
     .join('');
 
+  if (leadEmptyState) leadEmptyState.hidden = filteredLeads.length > 0;
+
   ambassadorBody.innerHTML = demoDb.ambassadors
     .map((ambassador) => {
       const totals = calculateAmbassadorTotals(ambassador.id);
+      const statusBadge = ambassador.status === 'Active' ? 'ok' : ambassador.status === 'Paused' ? 'paused' : 'pending';
+      const approveButton = ambassador.status === 'Pending'
+        ? `<button class="btn-primary approve-ambassador" data-id="${ambassador.id}" type="button">Godkjenn</button>`
+        : '<span class="muted">-</span>';
+
       return `
       <tr>
         <td>${ambassador.name}</td>
@@ -208,10 +234,12 @@ function renderAdmin() {
           <select class="ambassador-status" data-id="${ambassador.id}">
             ${AMBASSADOR_STATUSES.map((status) => `<option value="${status}" ${status === ambassador.status ? 'selected' : ''}>${status}</option>`).join('')}
           </select>
+          <span class="badge ${statusBadge}">${ambassador.status}</span>
         </td>
         <td>${totals.leads}</td>
         <td>${currency(totals.revenue)}</td>
         <td>${currency(totals.earned)}</td>
+        <td>${approveButton}</td>
       </tr>`;
     })
     .join('');
@@ -231,34 +259,72 @@ function renderAdmin() {
     .join('');
 }
 
+function openStatusModal(leadId) {
+  const backdrop = document.querySelector('#statusModalBackdrop');
+  const select = document.querySelector('#statusModalSelect');
+  const message = document.querySelector('#statusModalMessage');
+  const lead = demoDb.leads.find((item) => item.id === leadId);
+  if (!backdrop || !select || !lead) return;
+
+  adminState.pendingStatusLeadId = leadId;
+  select.innerHTML = LEAD_STATUSES.map((status) => `<option value="${status}" ${status === lead.status ? 'selected' : ''}>${status}</option>`).join('');
+  if (message) message.textContent = `Endre status for ${lead.company}.`;
+  backdrop.classList.add('open');
+}
+
+function closeStatusModal() {
+  const backdrop = document.querySelector('#statusModalBackdrop');
+  adminState.pendingStatusLeadId = null;
+  backdrop?.classList.remove('open');
+}
+
 function initAdminPage() {
   const leadBody = document.querySelector('#adminLeadBody');
   const ambassadorBody = document.querySelector('#adminAmbassadorBody');
   const payoutBody = document.querySelector('#adminPayoutBody');
+  const leadStatusFilter = document.querySelector('#leadStatusFilter');
+  const leadAmbassadorFilter = document.querySelector('#leadAmbassadorFilter');
+  const closeModalButton = document.querySelector('#closeStatusModal');
+  const saveModalButton = document.querySelector('#saveStatusModal');
+  const modalSelect = document.querySelector('#statusModalSelect');
+  const modalBackdrop = document.querySelector('#statusModalBackdrop');
+
   if (!leadBody || !ambassadorBody || !payoutBody) return;
+
+  if (leadAmbassadorFilter) {
+    const options = ['all', ...new Set(demoDb.leads.map((lead) => lead.ambassadorId || 'Ingen'))];
+    leadAmbassadorFilter.innerHTML = options.map((option) => {
+      const label = option === 'all' ? 'Alle' : option;
+      return `<option value="${option}">${label}</option>`;
+    }).join('');
+  }
 
   renderAdmin();
 
-  leadBody.addEventListener('change', (event) => {
-    const statusInput = event.target.closest('.admin-status');
-    if (statusInput) {
-      const lead = demoDb.leads.find((item) => item.id === statusInput.dataset.id);
-      lead.status = statusInput.value;
-      if (lead.status !== 'Won') {
-        lead.dealValue = 0;
-        lead.commissionAmount = 0;
-      }
-      renderAdmin();
-      return;
-    }
+  leadStatusFilter?.addEventListener('change', (event) => {
+    adminState.leadStatusFilter = event.target.value;
+    renderAdmin();
+  });
 
+  leadAmbassadorFilter?.addEventListener('change', (event) => {
+    adminState.ambassadorFilter = event.target.value;
+    renderAdmin();
+  });
+
+  leadBody.addEventListener('change', (event) => {
     const dealInput = event.target.closest('.deal-input');
-    if (dealInput) {
-      const lead = demoDb.leads.find((item) => item.id === dealInput.dataset.id);
-      lead.dealValue = Number(dealInput.value || 0);
-      lead.commissionAmount = Math.round(lead.dealValue * DEFAULT_COMMISSION_RATE);
-      renderAdmin();
-    }
+    if (!dealInput) return;
+
+    const lead = demoDb.leads.find((item) => item.id === dealInput.dataset.id);
+    lead.dealValue = Number(dealInput.value || 0);
+    lead.commissionAmount = Math.round(lead.dealValue * DEFAULT_COMMISSION_RATE);
+    renderAdmin();
+  });
+
+  leadBody.addEventListener('click', (event) => {
+    const modalButton = event.target.closest('.open-status-modal');
+    if (!modalButton) return;
+    openStatusModal(modalButton.dataset.id);
   });
 
   ambassadorBody.addEventListener('change', (event) => {
@@ -269,14 +335,46 @@ function initAdminPage() {
     renderAdmin();
   });
 
+  ambassadorBody.addEventListener('click', (event) => {
+    const approveButton = event.target.closest('.approve-ambassador');
+    if (!approveButton) return;
+    const ambassador = demoDb.ambassadors.find((item) => item.id === approveButton.dataset.id);
+    ambassador.status = 'Active';
+    renderAdmin();
+  });
+
   payoutBody.addEventListener('click', (event) => {
     const paidButton = event.target.closest('.mark-paid');
     if (!paidButton) return;
     const ambassadorId = paidButton.dataset.id;
     const totals = calculateAmbassadorTotals(ambassadorId);
+    if (totals.available <= 0) return;
     demoDb.payouts.push({ ambassadorId, paidOut: totals.available });
     renderAdmin();
   });
+
+  closeModalButton?.addEventListener('click', closeStatusModal);
+  modalBackdrop?.addEventListener('click', (event) => {
+    if (event.target === modalBackdrop) closeStatusModal();
+  });
+
+  saveModalButton?.addEventListener('click', () => {
+    if (!adminState.pendingStatusLeadId || !modalSelect) return;
+    const lead = demoDb.leads.find((item) => item.id === adminState.pendingStatusLeadId);
+    lead.status = modalSelect.value;
+    if (lead.status !== 'Won') {
+      lead.dealValue = 0;
+      lead.commissionAmount = 0;
+    }
+    closeStatusModal();
+    renderAdmin();
+  });
+}
+
+function getAmbassadorLeads(ambassadorId) {
+  const leads = demoDb.leads.filter((lead) => lead.ambassadorId === ambassadorId);
+  if (ambassadorState.leadFilter === 'all') return leads;
+  return leads.filter((lead) => lead.status === ambassadorState.leadFilter);
 }
 
 function renderAmbassadorDashboard() {
@@ -285,12 +383,13 @@ function renderAmbassadorDashboard() {
   const totalCommission = document.querySelector('#metricCommission');
   const availablePayout = document.querySelector('#metricAvailable');
   const leadList = document.querySelector('#leadList');
+  const emptyState = document.querySelector('#ambassadorEmptyState');
 
   if (!totalLeads || !totalWon || !totalCommission || !availablePayout || !leadList) return;
 
   const ambassadorId = 'AMB123';
   const totals = calculateAmbassadorTotals(ambassadorId);
-  const leads = demoDb.leads.filter((lead) => lead.ambassadorId === ambassadorId);
+  const leads = getAmbassadorLeads(ambassadorId);
 
   totalLeads.textContent = String(totals.leads);
   totalWon.textContent = String(totals.won);
@@ -303,6 +402,8 @@ function renderAmbassadorDashboard() {
     )
     .join('');
 
+  if (emptyState) emptyState.hidden = leads.length > 0;
+
   const copyBtn = document.querySelector('#copyLink');
   copyBtn?.addEventListener('click', async () => {
     await navigator.clipboard.writeText('https://animer.no/a/AMB123');
@@ -310,6 +411,20 @@ function renderAmbassadorDashboard() {
     setTimeout(() => {
       copyBtn.textContent = 'Kopier lenke';
     }, 1200);
+  });
+}
+
+function initAmbassadorTabs() {
+  const tabs = document.querySelector('#ambassadorLeadTabs');
+  if (!tabs) return;
+
+  tabs.addEventListener('click', (event) => {
+    const tab = event.target.closest('.tab-btn');
+    if (!tab) return;
+    ambassadorState.leadFilter = tab.dataset.filter;
+    tabs.querySelectorAll('.tab-btn').forEach((button) => button.classList.remove('active'));
+    tab.classList.add('active');
+    renderAmbassadorDashboard();
   });
 }
 
@@ -338,12 +453,12 @@ function initLandingPage() {
     const result = createLead(payload);
     if (!result.created) {
       leadMessage.textContent = result.reason;
-      leadMessage.style.color = 'var(--warning)';
+      leadMessage.style.color = 'var(--color-warning)';
       return;
     }
 
     leadMessage.textContent = `Lead lagret. ambassadorId=${result.lead.ambassadorId || 'null'} status=open`;
-    leadMessage.style.color = 'var(--success)';
+    leadMessage.style.color = 'var(--color-success)';
     leadForm.reset();
   });
 }
@@ -353,6 +468,7 @@ handleRedirectLoginResult();
 initNavbar();
 initLandingPage();
 initAdminPage();
+initAmbassadorTabs();
 renderAmbassadorDashboard();
 
 const loginGoogleBtn = document.querySelector('#loginGoogle');
