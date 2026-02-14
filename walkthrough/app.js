@@ -62,22 +62,35 @@ function getFriendlyAuthError(error) {
   if (error?.code === 'auth/popup-closed-by-user') return 'Innlogging avbrutt.';
   if (error?.code === 'auth/popup-blocked') return 'Popup blokkert. Vi prøver redirect-innlogging.';
   if (error?.code === 'auth/unauthorized-domain') return 'Domenet er ikke whitelistet i Firebase Authentication.';
+  if (error?.code === 'permission-denied') {
+    return 'Innlogging feilet: Mangler tilgang til Firestore. Oppdater sikkerhetsregler for ambassadors-samlingen.';
+  }
   return `Innlogging feilet: ${error?.message || 'Ukjent feil.'}`;
 }
 
 async function ensureAmbassadorProfile(user) {
-  const ambassadorRef = doc(db, 'ambassadors', user.uid);
-  const ambassadorSnap = await getDoc(ambassadorRef);
+  try {
+    const ambassadorRef = doc(db, 'ambassadors', user.uid);
+    const ambassadorSnap = await getDoc(ambassadorRef);
 
-  if (!ambassadorSnap.exists()) {
-    await setDoc(ambassadorRef, {
-      id: user.uid,
-      name: user.displayName,
-      email: user.email,
-      status: 'pending',
-      commissionRate: DEFAULT_COMMISSION_RATE,
-      createdAt: serverTimestamp()
-    });
+    if (!ambassadorSnap.exists()) {
+      await setDoc(ambassadorRef, {
+        id: user.uid,
+        name: user.displayName,
+        email: user.email,
+        status: 'pending',
+        commissionRate: DEFAULT_COMMISSION_RATE,
+        createdAt: serverTimestamp()
+      });
+    }
+
+    return { profileReady: true };
+  } catch (error) {
+    if (error?.code === 'permission-denied') {
+      return { profileReady: false, error };
+    }
+
+    throw error;
   }
 }
 
@@ -85,7 +98,11 @@ async function handleRedirectLoginResult() {
   try {
     const result = await getRedirectResult(auth);
     if (!result?.user) return;
-    await ensureAmbassadorProfile(result.user);
+    const syncStatus = await ensureAmbassadorProfile(result.user);
+    if (!syncStatus.profileReady) {
+      setAuthMessage(`Innlogget som ${result.user.email}, men profil kunne ikke lagres (Firestore-regler).`);
+      return;
+    }
     setAuthMessage(`Innlogget som ${result.user.email}. Status: Pending (manuell godkjenning).`);
   } catch (error) {
     setAuthMessage(getFriendlyAuthError(error));
@@ -100,7 +117,11 @@ window.loginWithGoogle = async (event) => {
 
   try {
     const result = await signInWithPopup(auth, provider);
-    await ensureAmbassadorProfile(result.user);
+    const syncStatus = await ensureAmbassadorProfile(result.user);
+    if (!syncStatus.profileReady) {
+      setAuthMessage(`Innlogget som ${result.user.email}, men profil kunne ikke lagres (Firestore-regler).`);
+      return;
+    }
     setAuthMessage(`Innlogget som ${result.user.email}. Status: Pending (manuell godkjenning).`);
   } catch (error) {
     if (['auth/popup-blocked', 'auth/internal-error'].includes(error?.code)) {
