@@ -1,8 +1,14 @@
 import { initAmbassadorCharts } from './charts/index.js';
 import { currency, demoDb } from './data-store.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js';
-import { getAnalytics } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-analytics.js';
-import { getAuth, GoogleAuthProvider, signInWithPopup } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js';
+import { getAnalytics, isSupported as isAnalyticsSupported } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-analytics.js';
+import {
+  getAuth,
+  getRedirectResult,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInWithRedirect
+} from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js';
 import { doc, getDoc, getFirestore, serverTimestamp, setDoc } from 'https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js';
 
 const firebaseConfig = {
@@ -16,44 +22,127 @@ const firebaseConfig = {
 };
 
 const firebaseApp = initializeApp(firebaseConfig);
-getAnalytics(firebaseApp);
 const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
+const authMessage = document.querySelector('#authMessage');
 
-window.loginWithGoogle = async () => {
+async function initAnalytics() {
+  try {
+    if (await isAnalyticsSupported()) {
+      getAnalytics(firebaseApp);
+    }
+  } catch (error) {
+    console.warn('Analytics er ikke støttet i denne nettleseren.', error);
+  }
+}
+
+function setAuthMessage(message) {
+  if (authMessage) authMessage.textContent = message;
+}
+
+function getFriendlyAuthError(error) {
+  const errorCode = error?.code || '';
+
+  if (errorCode === 'auth/popup-closed-by-user') {
+    return 'Innlogging avbrutt. Du lukket Google-vinduet før innlogging var ferdig.';
+  }
+
+  if (errorCode === 'auth/popup-blocked') {
+    return 'Nettleseren blokkerte popup. Vi prøver innlogging via redirect...';
+  }
+
+  if (errorCode === 'auth/unauthorized-domain') {
+    return 'Dette domenet er ikke godkjent i Firebase Authentication. Legg domenet til under Authorized domains i Firebase Console.';
+  }
+
+  if (errorCode === 'auth/internal-error') {
+    return 'Innlogging feilet i denne nettleseren. Prøv å åpne siden i Chrome/Safari og forsøk igjen.';
+  }
+
+  return `Innlogging feilet: ${error?.message || 'Ukjent feil.'}`;
+}
+
+async function ensureAmbassadorProfile(user) {
+  const ambassadorRef = doc(db, 'ambassadors', user.uid);
+  const ambassadorSnap = await getDoc(ambassadorRef);
+
+  if (!ambassadorSnap.exists()) {
+    await setDoc(ambassadorRef, {
+      name: user.displayName,
+      email: user.email,
+      status: 'pending',
+      commission_total: 0,
+      created_at: serverTimestamp()
+    });
+  }
+}
+
+async function handleRedirectLoginResult() {
+  try {
+    const result = await getRedirectResult(auth);
+    if (!result?.user) return;
+
+    await ensureAmbassadorProfile(result.user);
+    setAuthMessage(`Innlogget som ${result.user.email}`);
+  } catch (error) {
+    console.error('Redirect-innlogging feilet.', error);
+    setAuthMessage(getFriendlyAuthError(error));
+  }
+}
+
+window.loginWithGoogle = async (event) => {
+  const clickedButton = event?.currentTarget;
   const provider = new GoogleAuthProvider();
-  const authMessage = document.querySelector('#authMessage');
+
+  if (clickedButton instanceof HTMLButtonElement) {
+    clickedButton.disabled = true;
+  }
+
+  setAuthMessage('Starter Google-innlogging...');
 
   try {
     const result = await signInWithPopup(auth, provider);
-    const { user } = result;
-
-    const ambassadorRef = doc(db, 'ambassadors', user.uid);
-    const ambassadorSnap = await getDoc(ambassadorRef);
-
-    if (!ambassadorSnap.exists()) {
-      await setDoc(ambassadorRef, {
-        name: user.displayName,
-        email: user.email,
-        status: 'pending',
-        commission_total: 0,
-        created_at: serverTimestamp()
-      });
-    }
-
-    if (authMessage) {
-      authMessage.textContent = `Innlogget som ${user.email}`;
-    }
+    await ensureAmbassadorProfile(result.user);
+    setAuthMessage(`Innlogget som ${result.user.email}`);
   } catch (error) {
+    const shouldUseRedirect = ['auth/popup-blocked', 'auth/internal-error'].includes(error?.code);
+
+    if (shouldUseRedirect) {
+      setAuthMessage('Popup feilet. Sender deg videre til Google-innlogging...');
+      await signInWithRedirect(auth, provider);
+      return;
+    }
+
     console.error('Google-innlogging feilet.', error);
-    if (authMessage) {
-      authMessage.textContent = `Innlogging feilet: ${error.message}`;
+    setAuthMessage(getFriendlyAuthError(error));
+  } finally {
+    if (clickedButton instanceof HTMLButtonElement) {
+      clickedButton.disabled = false;
     }
   }
 };
 
+initAnalytics();
+handleRedirectLoginResult();
+
 const loginGoogleBtn = document.querySelector('#loginGoogle');
 const registerGoogleBtn = document.querySelector('#registerGoogle');
+const loginFacebookBtn = document.querySelector('#loginFacebook');
+const registerFacebookBtn = document.querySelector('#registerFacebook');
+
+const toggleRegisterEmailBtn = document.querySelector('#toggleRegisterEmail');
+const registerEmailFields = document.querySelector('#registerEmailFields');
+
+if (toggleRegisterEmailBtn && registerEmailFields) {
+  toggleRegisterEmailBtn.addEventListener('click', () => {
+    registerEmailFields.classList.remove('is-hidden');
+    registerEmailFields.setAttribute('aria-hidden', 'false');
+    toggleRegisterEmailBtn.classList.add('is-hidden');
+
+    const firstField = registerEmailFields.querySelector('input');
+    firstField?.focus();
+  });
+}
 
 
 const toggleRegisterEmailBtn = document.querySelector('#toggleRegisterEmail');
@@ -72,6 +161,13 @@ if (toggleRegisterEmailBtn && registerEmailFields) {
 
 loginGoogleBtn?.addEventListener('click', window.loginWithGoogle);
 registerGoogleBtn?.addEventListener('click', window.loginWithGoogle);
+
+const handleFacebookClick = () => {
+  setAuthMessage('Facebook-innlogging er ikke aktivert enda. Bruk Google eller e-post inntil videre.');
+};
+
+loginFacebookBtn?.addEventListener('click', handleFacebookClick);
+registerFacebookBtn?.addEventListener('click', handleFacebookClick);
 
 function initNavbar() {
   const navToggle = document.querySelector('#navToggle');
