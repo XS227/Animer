@@ -102,7 +102,15 @@ export function formatDate(value) {
 export function calculateAmbassadorTotals(ambassadorId) {
   const ambassador = demoDb.ambassadors.find((item) => item.id === ambassadorId);
   const ambassadorLeads = demoDb.leads.filter((lead) => lead.ambassadorId === ambassadorId);
-  const wonLeads = ambassadorLeads.filter((lead) => lead.status === 'Won');
+  const wonLeads = ambassadorLeads.filter((lead) => String(lead.status || '').toLowerCase() === 'won');
+  const approvedLeads = ambassadorLeads.filter((lead) => {
+    const status = String(lead.status || '').toLowerCase();
+    return status === 'approved' || status === 'won';
+  });
+  const pipelineLeads = ambassadorLeads.filter((lead) => {
+    const status = String(lead.status || '').toLowerCase();
+    return status !== 'approved' && status !== 'won' && status !== 'lost';
+  });
   const revenue = wonLeads.reduce((sum, lead) => sum + Number(lead.dealValue || 0), 0);
   const rate = Number(ambassador?.commissionRate || 0);
   const earned = wonLeads.reduce((sum, lead) => sum + Math.round(Number(lead.dealValue || 0) * rate), 0);
